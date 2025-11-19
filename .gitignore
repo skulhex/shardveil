@@ -1,4 +1,23 @@
-.DS_Store
+# Python
+__pycache__/
+*.py[cod]
 
-# PyCharm
-.idea
+# Virtual env
+venv/
+.env/
+
+# IDE
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
