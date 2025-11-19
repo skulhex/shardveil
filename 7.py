@@ -91,9 +91,6 @@ class MyGame(arcade.Window):
 window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
 arcade.run()
 
-# Запуск
-window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-arcade.run()
 
 
 
