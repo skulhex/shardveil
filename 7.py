@@ -22,13 +22,13 @@ class MyGame(arcade.Window):
         self.scene = arcade.Scene()
 
         # Добавляем землю
-        ground = arcade.Sprite("Снимок экрана 2025-07-09 182924.png")
+        ground = arcade.Sprite("assets/Снимок экрана 2025-07-09 182924.png")
         ground.center_x = 400
         ground.center_y = 32
         self.scene.add_sprite("ground", ground)
 
         # Добавляем игрока
-        player = arcade.Sprite("говяшки.png", 0.5)
+        player = arcade.Sprite("assets/говяшки.png", 0.5)
         player.center_x = 50
         player.center_y = 100
         self.scene.add_sprite("player", player)
