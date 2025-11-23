@@ -1,5 +1,5 @@
-from crypt.core.config import Settings
-from crypt.core.game_state import GameState
+from crypt.core import Settings, GameState
+from crypt.world import LevelGenerator
 
 def main():
     settings = Settings()
