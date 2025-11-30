@@ -17,6 +17,8 @@ class Game(arcade.Window):
         )
         self.scene = None
         self.player_sprite = None
+        self.camera = None
+        self.target_zoom = None
 
     def setup(self):
         # Генерируем уровень
@@ -60,16 +62,26 @@ class Game(arcade.Window):
         self.player_sprite.center_y = TILE_SIZE * 2 + TILE_SIZE / 2
 
         self.scene.add_sprite("Player", self.player_sprite)
+        self.camera = arcade.camera.Camera2D()
+        self.camera.zoom = 2.0  # увеличение всех спрайтов в 2 раза
+        self.target_zoom = 2.0  # чтобы зум при нажатиях корректно работал
 
     def on_draw(self):
         self.clear()
+        self.camera.use()
         self.scene.draw()
 
     def on_update(self, delta_time):
-        pass
+        # Плавная интерполяция зума камеры
+        self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
+        # Центр экрана на игроке
+        self.camera.position = (
+            self.player_sprite.center_x,
+            self.player_sprite.center_y)
 
     def on_key_press(self, symbol, modifiers):
         tile = TILE_SIZE
+        # Передвижение по тайлам
         if symbol in (arcade.key.W, arcade.key.UP):
             self.player_sprite.center_y += tile
         elif symbol in (arcade.key.S, arcade.key.DOWN):
@@ -78,6 +90,13 @@ class Game(arcade.Window):
             self.player_sprite.center_x -= tile
         elif symbol in (arcade.key.D, arcade.key.RIGHT):
             self.player_sprite.center_x += tile
+        # Зум камеры
+        elif symbol in (arcade.key.PLUS, arcade.key.EQUAL):  # Приблизить
+            self.target_zoom *= 1.5
+        elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):  # Отдалить
+            self.target_zoom /= 1.5
+        # Ограничиваем диапазон зума (1x–4x)
+        self.target_zoom = max(1.0, min(4.0, self.target_zoom))
 
     def on_key_release(self, symbol, modifiers):
         pass
