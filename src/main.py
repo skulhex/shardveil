@@ -17,6 +17,7 @@ class Game(arcade.Window):
         )
         self.scene = None
         self.player_sprite = None
+        self.camera = None
 
     def setup(self):
         # Генерируем уровень
@@ -60,13 +61,18 @@ class Game(arcade.Window):
         self.player_sprite.center_y = TILE_SIZE * 2 + TILE_SIZE / 2
 
         self.scene.add_sprite("Player", self.player_sprite)
+        self.camera = arcade.camera.Camera2D()
 
     def on_draw(self):
         self.clear()
+        self.camera.use()
         self.scene.draw()
 
     def on_update(self, delta_time):
-        pass
+        # Центр экрана на игроке
+        self.camera.position = (
+            self.player_sprite.center_x,
+            self.player_sprite.center_y)
 
     def on_key_press(self, symbol, modifiers):
         tile = TILE_SIZE
