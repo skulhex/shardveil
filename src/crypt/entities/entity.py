@@ -1,86 +1,44 @@
 import arcade
-from typing import Optional, Tuple
-
-# --- Константы игры ---
-TILE_SIZE: int = 32                  # размер тайла пиксельной игры
-PLAYER_SPEED: int = 2                # скорость (целые числа)
-PLAYER_SIZE: int = TILE_SIZE         # размер игрока = 1 тайл
+from src.crypt.core import Settings
 
 PLAYER_TEXTURE_PATH = "assets/player.png"   # путь к текстуре игрока
-
+TILE_SIZE = Settings.TILE_SIZE
 
 class Entity(arcade.Sprite):
-    """
-    Базовая сущность игрового мира.
-    """
-
-    def __init__(self, x: int, y: int, texture: Optional[str] = None):
-        # Для пиксельной игры важна четкая сетка → scale=1
-        super().__init__(texture=texture, scale=1)
-
-        # позиция в сетке тайлов
+    """Базовая сущность игрового мира"""
+    def __init__(self, x: int, y: int, texture: str = None, scale: float = 1):
+        super().__init__(texture=texture, scale=scale)
         self.center_x = x
         self.center_y = y
 
-        # Размеры пиксельного хитбокса
-        self.width = PLAYER_SIZE
-        self.height = PLAYER_SIZE
-
     def update(self):
+        # Заглушка для будущей логики обновления сущности
         super().update()
-
-
-class Player(Entity):
-    """
-    Класс игрока.
-    """
-
-    def __init__(self, x: int, y: int):
-        # загружаем текстуру, можно заменить на анимации позже
-        super().__init__(x, y, PLAYER_TEXTURE_PATH)
-
-        # скорость в пикселях
-        self.speed: int = PLAYER_SPEED
-
-        # состояние под FSM (idle/move/jump)
-        self.is_moving: bool = False
-
-        # входной вектор движения (будет задаваться окном)
-        self._input_vector: Tuple[int, int] = (0, 0)
-
-    def setup(self):
-        self.change_x = 0
-        self.change_y = 0
-
-    def update(self):
-        self._apply_input()
-        self._update_animation()
-        super().update()
-        self._handle_collisions()
-
-    # --- ЛОГИКА ---
-
-    def set_input(self, dx: int, dy: int):
-        """
-        Устанавливается из on_key_press / on_key_release в Window.
-        """
-        self._input_vector = (dx, dy)
-
-    def _apply_input(self):
-        dx, dy = self._input_vector
-        self.change_x = dx * self.speed
-        self.change_y = dy * self.speed
-
-        self.is_moving = (dx != 0 or dy != 0)
 
     def _handle_collisions(self):
-        """
-        Заготовка под Arcade Physics Engine. пригодиться
-        """
+        # Заглушка для обработки коллизий
         pass
 
     def _update_animation(self):
-        """
-        На будущее: смена кадров. Ну вроде она есть она на всякий добавил заготовочку
-        """
+        # Заглушка для смены кадров
+        pass
+
+
+class Player(Entity):
+    """Класс игрока"""
+    def __init__(self, tile_x: int, tile_y: int):
+        # позиция в пикселях на основе тайлов, центр тайла
+        pixel_x = tile_x * TILE_SIZE + TILE_SIZE // 2
+        pixel_y = tile_y * TILE_SIZE + TILE_SIZE // 2
+        super().__init__(pixel_x, pixel_y, PLAYER_TEXTURE_PATH)
+        self.tile_x = tile_x
+        self.tile_y = tile_y
+        self.is_moving = False
+
+    def _handle_collisions(self):
+        # Заглушка для обработки коллизий
+        pass
+
+    def _update_animation(self):
+        # Заглушка для смены кадров
         pass
