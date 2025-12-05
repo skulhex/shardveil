@@ -1,4 +1,5 @@
 import arcade
+from arcade import gl
 from pathlib import Path
 from PIL import Image
 from crypt.core import Settings, GameState
@@ -6,6 +7,9 @@ from crypt.world import LevelGenerator
 
 ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
+
+# отключение сглаживания для пиксельной графики
+arcade.SpriteList.DEFAULT_TEXTURE_FILTER = gl.NEAREST, gl.NEAREST
 
 class Game(arcade.Window):
     def __init__(self):
