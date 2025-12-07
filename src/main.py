@@ -1,11 +1,14 @@
 import arcade
+from arcade import gl
 from pathlib import Path
-from PIL import Image
 from crypt.core import Settings, GameState
 from crypt.world import LevelGenerator
 
 ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
+
+# отключение сглаживания для пиксельной графики
+arcade.SpriteList.DEFAULT_TEXTURE_FILTER = gl.NEAREST, gl.NEAREST
 
 class Game(arcade.Window):
     def __init__(self):
@@ -30,12 +33,16 @@ class Game(arcade.Window):
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
 
-        # Загружаем PNG tileset целиком
-        tileset_image = Image.open(ASSETS_PATH / "sprites/tileset.png")
+        # Загрузка спрайтшита с тайлами
+        tileset_image = ASSETS_PATH / "sprites/tileset.png"
 
-        # Основные тайлы
-        floor_texture = self.get_tile(tileset_image, 0, 0)  # пол
-        wall_texture = self.get_tile(tileset_image, 1, 0)   # стена
+        # Загрузка тайлов из спрайтшита
+        tiles = arcade.load_spritesheet(tileset_image)
+        textures = tiles.get_texture_grid((TILE_SIZE, TILE_SIZE), columns=2, count=2)
+
+        # Назначение текстур для пола и стен
+        floor_texture = textures[0]
+        wall_texture = textures[1]
 
         for y in range(len(level)):
             for x in range(len(level[0])):
@@ -100,13 +107,6 @@ class Game(arcade.Window):
 
     def on_key_release(self, symbol, modifiers):
         pass
-
-    def get_tile(self, tileset_image, col, row):
-        x = col * TILE_SIZE
-        y = row * TILE_SIZE
-        tile = tileset_image.crop((x, y, x + TILE_SIZE, y + TILE_SIZE))
-        return arcade.Texture(tile)
-
 
 def main():
     game = Game()
