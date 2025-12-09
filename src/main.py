@@ -3,6 +3,7 @@ from arcade import gl
 from pathlib import Path
 from crypt.core import Settings, GameState
 from crypt.world import LevelGenerator
+from crypt.entities import Player
 
 ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
@@ -32,6 +33,7 @@ class Game(arcade.Window):
         self.scene = arcade.Scene()
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
+        self.scene.add_sprite_list("Player")
 
         # Загрузка спрайтшита с тайлами
         tileset_image = ASSETS_PATH / "sprites/tileset.png"
@@ -64,10 +66,7 @@ class Game(arcade.Window):
                     self.scene["Walls"].append(sprite)
 
         # Создаём игрока
-        self.player_sprite = arcade.Sprite(str(ASSETS_PATH / "sprites/player.png"), scale=1)
-        self.player_sprite.center_x = TILE_SIZE * 2 + TILE_SIZE / 2
-        self.player_sprite.center_y = TILE_SIZE * 2 + TILE_SIZE / 2
-
+        self.player_sprite = Player(tile_x=8, tile_y=5)
         self.scene.add_sprite("Player", self.player_sprite)
         self.camera = arcade.camera.Camera2D()
         self.camera.zoom = 2.0  # увеличение всех спрайтов в 2 раза
