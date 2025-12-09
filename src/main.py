@@ -68,9 +68,13 @@ class Game(arcade.Window):
         # Создаём игрока
         self.player_sprite = Player(tile_x=8, tile_y=5)
         self.scene.add_sprite("Player", self.player_sprite)
+        # Настраиваем камеру
         self.camera = arcade.camera.Camera2D()
         self.camera.zoom = 2.0  # увеличение всех спрайтов в 2 раза
-        self.target_zoom = 2.0  # чтобы зум при нажатиях корректно работал
+        self.target_zoom = 2.0  # начальный целевой зум
+        self.camera.position = (# начальная позиция камеры
+            self.player_sprite.center_x,
+            self.player_sprite.center_y)
 
     def on_draw(self):
         self.clear()
@@ -80,10 +84,12 @@ class Game(arcade.Window):
     def on_update(self, delta_time):
         # Плавная интерполяция зума камеры
         self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
-        # Центр экрана на игроке
+        # Плавное следование камеры за игроком
+        cam_x, cam_y = self.camera.position
         self.camera.position = (
-            self.player_sprite.center_x,
-            self.player_sprite.center_y)
+            cam_x + (self.player_sprite.center_x - cam_x) * 0.1,
+            cam_y + (self.player_sprite.center_y - cam_y) * 0.1
+        )
 
     def on_key_press(self, symbol, modifiers):
         tile = TILE_SIZE
