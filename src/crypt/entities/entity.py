@@ -2,17 +2,29 @@ import arcade
 from pathlib import Path
 from src.crypt.core import Settings
 
-ASSETS_PATH = Path(__file__).parent.parent.parent.parent / "-"
-PLAYER_TEXTURE = str(ASSETS_PATH / "-")
-ENEMY_TEXTURE = str(ASSETS_PATH / "-") 
+ASSETS_PATH = Path(__file__).parent.parent.parent.parent / "assets"
+PLAYER_TEXTURE = str(ASSETS_PATH / "sprites/player.png")
 TILE_SIZE = Settings.TILE_SIZE
 
 class Entity(arcade.Sprite):
     """Базовая сущность игрового мира"""
-    def __init__(self, x: int, y: int, texture: str = None):
+    def __init__(self, texture, tile_x: int, tile_y: int, hp: int = 1):
         super().__init__(str(texture))
-        self.center_x = x
-        self.center_y = y
+
+        self.hp = hp
+        self.tile_x = tile_x
+        self.tile_y = tile_y
+
+        self.center_x = tile_x * TILE_SIZE + TILE_SIZE // 2
+        self.center_y = tile_y * TILE_SIZE + TILE_SIZE // 2
+
+    def take_damage(self, amount: int):
+        self.hp -= amount
+        if self.hp <= 0:
+            self.die()
+
+    def die(self):
+        self.remove_from_sprite_lists()
 
     def update(self):
         super().update()
@@ -33,14 +45,8 @@ class Entity(arcade.Sprite):
 class Player(Entity):
     """Класс игрока"""
     def __init__(self, tile_x: int, tile_y: int):
-        # позиция в пикселях на основе тайлов, центр тайла
-        pixel_x = tile_x * TILE_SIZE + TILE_SIZE // 2
-        pixel_y = tile_y * TILE_SIZE + TILE_SIZE // 2
-        super().__init__(pixel_x, pixel_y, PLAYER_TEXTURE)
-        self.tile_x = tile_x
-        self.tile_y = tile_y
-        self.is_moving = False
-        self.health = 100 # ХП
+        texture = str(ASSETS_PATH / "sprites/player.png")
+        super().__init__(texture, tile_x, tile_y, hp=10)
 
     def take_turn(self):
         """Ход игрока: ждет ввода от пользователя."""
@@ -56,16 +62,8 @@ class Player(Entity):
 
 
 class Enemy(Entity):
-    """Класс противника, наследуется от Entity. Логика ИИ активируется только в его ход."""
-    def __init__(self, tile_x: int, tile_y: int):
-        # Инициализация позиции по тайлам
-        pixel_x = tile_x * TILE_SIZE + TILE_SIZE // 2
-        pixel_y = tile_y * TILE_SIZE + TILE_SIZE // 2
-        super().__init__(pixel_x, pixel_y, ENEMY_TEXTURE)
-        self.tile_x = tile_x
-        self.tile_y = tile_y
-        self.health = 100 
-        self.target = None
+    def __init__(self, texture, tile_x: int, tile_y: int, hp: int = 3):
+        super().__init__(texture, tile_x, tile_y, hp)
 
     def take_turn(self):
         """Ход врага: немедленно выполняет логику ИИ."""
@@ -82,3 +80,8 @@ class Enemy(Entity):
     def _update_animation(self):
         # Переопределение заглушки для анимации
         pass
+
+class Skeleton(Enemy):
+    def __init__(self, tile_x: int, tile_y: int):
+        texture = ASSETS_PATH / "sprites/skeleton.png"
+        super().__init__(texture, tile_x, tile_y, hp=4)

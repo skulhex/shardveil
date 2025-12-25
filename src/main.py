@@ -3,7 +3,7 @@ from arcade import gl
 from pathlib import Path
 from crypt.core import Settings, GameState
 from crypt.world import LevelGenerator
-from crypt.entities import Player
+from crypt.entities import Player, Skeleton
 
 ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
@@ -34,6 +34,7 @@ class Game(arcade.Window):
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
         self.scene.add_sprite_list("Player")
+        self.scene.add_sprite_list("Skeleton")
 
         # Загрузка спрайтшита с тайлами
         tileset_image = ASSETS_PATH / "sprites/tileset.png"
@@ -75,6 +76,10 @@ class Game(arcade.Window):
         self.camera.position = (# начальная позиция камеры
             self.player_sprite.center_x,
             self.player_sprite.center_y)
+
+        # Создаём врага
+        skeleton = Skeleton(tile_x=10, tile_y=5)
+        self.scene.add_sprite("Skeleton", skeleton)
 
     def on_draw(self):
         self.clear()
