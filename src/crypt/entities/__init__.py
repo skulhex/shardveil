@@ -1,2 +1,2 @@
 """Player and enemy entities."""
-from .entity import Player
+from .entity import Player, Skeleton
