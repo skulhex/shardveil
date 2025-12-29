@@ -1,11 +1,9 @@
 import arcade
 from arcade import gl
-from pathlib import Path
-from sv.core import Settings, GameState
+from sv.core import Settings, GameState, resource_path
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 
-ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
 
 # отключение сглаживания для пиксельной графики
@@ -37,7 +35,7 @@ class Game(arcade.Window):
         self.scene.add_sprite_list("Skeleton")
 
         # Загрузка спрайтшита с тайлами
-        tileset_image = ASSETS_PATH / "sprites/tileset.png"
+        tileset_image = resource_path("assets/sprites/tileset.png")
 
         # Загрузка тайлов из спрайтшита
         tiles = arcade.load_spritesheet(tileset_image)
