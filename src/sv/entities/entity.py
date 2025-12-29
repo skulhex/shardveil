@@ -1,5 +1,5 @@
 import arcade
-from sv.core import Settings, resource_path
+from sv.core import Settings
 
 TILE_SIZE = Settings.TILE_SIZE
 
@@ -42,7 +42,7 @@ class Entity(arcade.Sprite):
 class Player(Entity):
     """Класс игрока"""
     def __init__(self, tile_x: int, tile_y: int):
-        texture = resource_path("assets/sprites/player.png")
+        texture = ":assets:/sprites/player.png"
         super().__init__(texture, tile_x, tile_y, hp=10)
 
     def take_turn(self):
@@ -80,5 +80,5 @@ class Enemy(Entity):
 
 class Skeleton(Enemy):
     def __init__(self, tile_x: int, tile_y: int):
-        texture = resource_path("assets/sprites/skeleton.png")
+        texture = ":assets:/sprites/skeleton.png"
         super().__init__(texture, tile_x, tile_y, hp=4)
