@@ -1,6 +1,6 @@
 import arcade
 from pathlib import Path
-from src.crypt.core import Settings
+from sv.core import Settings
 
 ASSETS_PATH = Path(__file__).parent.parent.parent.parent / "assets"
 PLAYER_TEXTURE = str(ASSETS_PATH / "sprites/player.png")

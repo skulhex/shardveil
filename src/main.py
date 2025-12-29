@@ -1,9 +1,9 @@
 import arcade
 from arcade import gl
 from pathlib import Path
-from crypt.core import Settings, GameState
-from crypt.world import LevelGenerator
-from crypt.entities import Player, Skeleton
+from sv.core import Settings, GameState
+from sv.world import LevelGenerator
+from sv.entities import Player, Skeleton
 
 ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
