@@ -1,3 +1,5 @@
+import sys
+import os
 import arcade
 from arcade import gl
 from pathlib import Path
@@ -8,7 +10,7 @@ from sv.entities import Player, Skeleton
 TILE_SIZE = Settings.TILE_SIZE
 
 # Путь к папке assets
-asset_dir = Path(__file__).resolve().parents[1] / "assets"
+asset_dir = Path(sys.argv[0]).resolve().parents[1] / "assets"
 # Регистрируем ресурс-хэндл для удобной загрузки ассетов
 arcade.resources.add_resource_handle("assets", asset_dir)
 
