@@ -1,12 +1,17 @@
+import sys
+from pathlib import Path
 import arcade
 from arcade import gl
-from pathlib import Path
 from sv.core import Settings, GameState
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 
-ASSETS_PATH = Path(__file__).parent.parent / "assets"
 TILE_SIZE = Settings.TILE_SIZE
+
+# Путь к папке assets
+asset_dir = Path(sys.argv[0]).resolve().parents[1] / "assets"
+# Регистрируем ресурс-хэндл для удобной загрузки ассетов
+arcade.resources.add_resource_handle("assets", asset_dir)
 
 # отключение сглаживания для пиксельной графики
 arcade.SpriteList.DEFAULT_TEXTURE_FILTER = gl.NEAREST, gl.NEAREST
@@ -37,7 +42,7 @@ class Game(arcade.Window):
         self.scene.add_sprite_list("Skeleton")
 
         # Загрузка спрайтшита с тайлами
-        tileset_image = ASSETS_PATH / "sprites/tileset.png"
+        tileset_image = ":assets:/sprites/tileset.png"
 
         # Загрузка тайлов из спрайтшита
         tiles = arcade.load_spritesheet(tileset_image)
