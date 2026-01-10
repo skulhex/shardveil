@@ -1,8 +1,7 @@
 import sys
-import os
+from pathlib import Path
 import arcade
 from arcade import gl
-from pathlib import Path
 from sv.core import Settings, GameState
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
