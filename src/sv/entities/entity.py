@@ -23,8 +23,8 @@ class Entity(arcade.Sprite):
     def die(self):
         self.remove_from_sprite_lists()
 
-    def update(self):
-        super().update()
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
 
     def take_turn(self):
         """Метод, вызываемый, когда наступает ход сущности. Основная игровая логика."""
