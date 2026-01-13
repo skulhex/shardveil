@@ -49,7 +49,7 @@ shardveil/
 ## Установка и запуск
 Склонируйте репозиторий и установите зависимости через pip:
 ```
-git clone https://github.com/sirex0101/shardveil
+git clone https://github.com/skulhex/shardveil
 cd shardveil
 pip install -r requirements.txt
 ```
