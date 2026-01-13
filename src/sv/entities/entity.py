@@ -23,8 +23,8 @@ class Entity(arcade.Sprite):
     def die(self):
         self.remove_from_sprite_lists()
 
-    def update(self):
-        super().update()
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
 
     def take_turn(self):
         """Метод, вызываемый, когда наступает ход сущности. Основная игровая логика."""
@@ -37,6 +37,18 @@ class Entity(arcade.Sprite):
     def _update_animation(self):
         # Заглушка для смены кадров
         pass
+
+    def attack(self, target: "Entity", damage: int = 1):
+        """Наносит урон другому объекту-существу.
+        По умолчанию наносит 1 урона. Проверяет, что цель не None и не сам субъект.
+        """
+        if target is None:
+            return
+        if target is self:
+            return
+        if not isinstance(target, Entity):
+            return
+        target.take_damage(damage)
 
 
 class Player(Entity):
