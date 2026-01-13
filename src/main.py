@@ -24,6 +24,7 @@ class Game(arcade.Window):
             height=self.settings.screen_height,
             title=self.settings.title
         )
+        self.level = None
         self.scene = None
         self.player_sprite = None
         self.camera = None
@@ -35,6 +36,7 @@ class Game(arcade.Window):
         level = gen.generate()
 
         # Создаём сцену
+        self.level = level
         self.scene = arcade.Scene()
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
@@ -101,27 +103,82 @@ class Game(arcade.Window):
             cam_y + (self.player_sprite.center_y - cam_y) * 0.1
         )
 
+    def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
+        """Возвращает сущность в списке по координатам тайла, либо None."""
+        # Если указано имя списка - ищем только в нём
+        if list_name:
+            sprites = self.scene.get_sprite_list(list_name)
+            if sprites:
+                for s in sprites:
+                    if getattr(s, "tile_x", None) == tile_x and getattr(s, "tile_y", None) == tile_y:
+                        return s
+            return None
+
+        # Иначе проверяем по всем основным спискам сущностей (можно расширить)
+        for name in ("Player", "Skeleton"):
+            sprites = self.scene.get_sprite_list(name)
+            if sprites:
+                for s in sprites:
+                    if getattr(s, "tile_x", None) == tile_x and getattr(s, "tile_y", None) == tile_y:
+                        return s
+        return None
+
     def on_key_press(self, symbol, modifiers):
-        tile = TILE_SIZE
-        # Передвижение по тайлам
+        # Перемещение теперь происходит через проверку уровня/сущностей
+        dx = 0
+        dy = 0
         if symbol in (arcade.key.W, arcade.key.UP):
-            self.player_sprite.center_y += tile
+            dy = 1
         elif symbol in (arcade.key.S, arcade.key.DOWN):
-            self.player_sprite.center_y -= tile
+            dy = -1
         elif symbol in (arcade.key.A, arcade.key.LEFT):
-            self.player_sprite.center_x -= tile
+            dx = -1
         elif symbol in (arcade.key.D, arcade.key.RIGHT):
-            self.player_sprite.center_x += tile
+            dx = 1
         # Зум камеры
         elif symbol in (arcade.key.PLUS, arcade.key.EQUAL):  # Приблизить
             self.target_zoom *= 1.5
         elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):  # Отдалить
             self.target_zoom /= 1.5
+
         # Ограничиваем диапазон зума (1x–4x)
         self.target_zoom = max(1.0, min(4.0, self.target_zoom))
 
+        # Если была нажата клавиш направления — пробуем сделать ход
+        if dx != 0 or dy != 0:
+            cur_tx = self.player_sprite.tile_x
+            cur_ty = self.player_sprite.tile_y
+            target_tx = cur_tx + dx
+            target_ty = cur_ty + dy
+
+            # Проверяем границы уровня
+            max_y = len(self.level)
+            max_x = len(self.level[0]) if max_y > 0 else 0
+            if not (0 <= target_tx < max_x and 0 <= target_ty < max_y):
+                return
+
+            # Проверяем тайл (0 = стена, 1 = пол)
+            if self.level[target_ty][target_tx] == 0:
+                # Стена — ход невозможен
+                return
+
+            # Проверяем наличие сущности в целевом тайле
+            entity = self.get_entity_at(target_tx, target_ty)
+            if entity and entity is not self.player_sprite:
+                # Враг/сущность на пути — атакуем
+                if hasattr(self.player_sprite, "attack"):
+                    self.player_sprite.attack(entity)
+                return
+
+            # Пустой проходимый тайл — двигаем игрока
+            self.player_sprite.tile_x = target_tx
+            self.player_sprite.tile_y = target_ty
+            self.player_sprite.center_x = target_tx * TILE_SIZE + TILE_SIZE // 2
+            self.player_sprite.center_y = target_ty * TILE_SIZE + TILE_SIZE // 2
+
     def on_key_release(self, symbol, modifiers):
         pass
+
 
 def main():
     game = Game()
