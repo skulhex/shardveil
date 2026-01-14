@@ -35,6 +35,8 @@ class Game(arcade.Window):
         # Очередь врагов для последовательной обработки
         self._enemy_queue: list = []
         self._current_enemy = None
+        # Набор текущих зажатых клавиш (для поддержки диагоналей)
+        self._pressed_keys: set[int] = set()
 
     def setup(self):
         # Генерируем уровень
@@ -153,15 +155,19 @@ class Game(arcade.Window):
         if self.turn != "player":
             return
 
+        # Добавляем клавишу в набор зажатых
+        self._pressed_keys.add(symbol)
+
+        # Вычисляем направление по текущим нажатым клавишам (поддержка диагоналей)
         dx = 0
         dy = 0
-        if symbol in (arcade.key.W, arcade.key.UP):
+        if any(k in self._pressed_keys for k in (arcade.key.W, arcade.key.UP)):
             dy = 1
-        elif symbol in (arcade.key.S, arcade.key.DOWN):
+        if any(k in self._pressed_keys for k in (arcade.key.S, arcade.key.DOWN)):
             dy = -1
-        elif symbol in (arcade.key.A, arcade.key.LEFT):
+        if any(k in self._pressed_keys for k in (arcade.key.A, arcade.key.LEFT)):
             dx = -1
-        elif symbol in (arcade.key.D, arcade.key.RIGHT):
+        if any(k in self._pressed_keys for k in (arcade.key.D, arcade.key.RIGHT)):
             dx = 1
         # Пропуск хода по пробелу
         elif symbol == arcade.key.SPACE:
@@ -181,8 +187,22 @@ class Game(arcade.Window):
         if dx == 0 and dy == 0:
             return
 
-        # Используем безопасную попытку перемещения через API сущности
-        res, blocker = self.player_sprite.attempt_move(dx, dy, self.level, self.scene)
+        # Попробуем перемещение с fallback-логикой при диагоналях: сначала (dx,dy), затем (dx,0), затем (0,dy)
+        def try_move_with_fallback(entity, dx, dy):
+            # Используем метод сущности, чтобы запустить анимацию (entity.attempt_move)
+            res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
+            if res == MoveResult.MOVED:
+                return res, blocker
+            # Если диагональ была заблокирована стеной — попробуем по осям
+            if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
+                res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
+                if res2 == MoveResult.MOVED:
+                    return res2, blocker2
+                res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
+                return res3, blocker3
+            return res, blocker
+
+        res, blocker = try_move_with_fallback(self.player_sprite, dx, dy)
         if res is None:
             return
 
@@ -203,7 +223,10 @@ class Game(arcade.Window):
             return
 
     def on_key_release(self, symbol, modifiers):
-        pass
+        # Убираем клавишу из набора зажатых
+        if symbol in self._pressed_keys:
+            self._pressed_keys.remove(symbol)
+        return
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
@@ -228,27 +251,39 @@ class Game(arcade.Window):
             ey = enemy.tile_y
             px = self.player_sprite.tile_x
             py = self.player_sprite.tile_y
-            # Если рядом — атакуем
-            if abs(ex - px) + abs(ey - py) == 1:
+            # Если рядом (включая диагональ) — атакуем (Chebyshev distance)
+            if max(abs(ex - px), abs(ey - py)) == 1:
                 if hasattr(enemy, "attack"):
                     enemy.attack(self.player_sprite)
                 continue
             # Иначе пытаемся подойти на 1 тайл по оси с приоритетом X
+            # Подходить можно по обеим осям одновременно — так враги смогут двигаться по диагонали
             dx = 0
             dy = 0
             if ex < px:
                 dx = 1
             elif ex > px:
                 dx = -1
-            elif ey < py:
+            if ey < py:
                 dy = 1
             elif ey > py:
                 dy = -1
 
-            # Используем безопасную попытку перемещения через API сущности
-            res, blocker = enemy.attempt_move(dx, dy, self.level, self.scene)
+            # Используем безопасную попытку перемещения через метод сущности (анимация)
+            def try_move_with_fallback_enemy(entity, dx, dy):
+                res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
+                if res == MoveResult.MOVED:
+                    return res, blocker
+                if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
+                    res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
+                    if res2 == MoveResult.MOVED:
+                        return res2, blocker2
+                    res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
+                    return res3, blocker3
+                return res, blocker
+
+            res, blocker = try_move_with_fallback_enemy(enemy, dx, dy)
             # Если блокирует стена — пропускаем
-            from sv.core.collision import MoveResult
             if res == MoveResult.BLOCKED_WALL:
                 continue
             # Если блокирует сущность — если это игрок, атакуем
