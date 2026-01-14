@@ -64,29 +64,58 @@ def get_blocking_entity(scene, tx: int, ty: int, ignore=None):
     return None
 
 
-def attempt_move(entity, dx: int, dy: int, level, scene) -> tuple[MoveResult, object | None]:
-    """Попытка атомарного перемещения сущности на (dx,dy) в тайлах.
-
-    Возвращает (MoveResult, blocker). Если MOVED — blocker is None.
+def can_move(entity, dx: int, dy: int, level, scene) -> tuple[MoveResult, object | None, int | None, int | None]:
+    """Проверяет возможность перемещения сущности на (dx,dy) в тайлах.
+    Важно: НЕ изменяет tile_x/tile_y и НЕ изменяет мировые координаты.
+    Возвращает (MoveResult, blocker, target_tx, target_ty).
     """
     if entity is None:
-        return MoveResult.BLOCKED_WALL, None
+        return MoveResult.BLOCKED_WALL, None, None, None
 
     try:
         cur_x = int(getattr(entity, "tile_x"))
         cur_y = int(getattr(entity, "tile_y"))
     except Exception:
-        return MoveResult.BLOCKED_WALL, None
+        return MoveResult.BLOCKED_WALL, None, None, None
 
     target_tx = cur_x + int(dx)
     target_ty = cur_y + int(dy)
 
     if not is_tile_walkable(level, target_tx, target_ty):
-        return MoveResult.BLOCKED_WALL, None
+        return MoveResult.BLOCKED_WALL, None, target_tx, target_ty
 
     blocker = get_blocking_entity(scene, target_tx, target_ty, ignore=entity)
     if blocker is not None:
-        return MoveResult.BLOCKED_ENTITY, blocker
+        return MoveResult.BLOCKED_ENTITY, blocker, target_tx, target_ty
+
+    return MoveResult.MOVED, None, target_tx, target_ty
+
+
+def commit_tile(entity, tx: int, ty: int) -> bool:
+    """
+    Резервирует тайл для сущности — обновляет tile_x/tile_y без изменения center_x/center_y.
+    Это позволяет начать анимацию перемещения, при этом тайл считается занятым.
+    """
+    if entity is None:
+        return False
+    try:
+        entity.tile_x = int(tx)
+        entity.tile_y = int(ty)
+        return True
+    except Exception:
+        return False
+
+
+def attempt_move(entity, dx: int, dy: int, level, scene) -> tuple[MoveResult, object | None]:
+    """
+    Попытка перемещения сущности на (dx,dy) в тайлах.
+    Возвращает (MoveResult, blocker).
+    Эта функция оставлена для обратной совместимости: она сразу обновляет мировые координаты.
+    """
+    # Используем can_move для проверки
+    res, blocker, target_tx, target_ty = can_move(entity, dx, dy, level, scene)
+    if res != MoveResult.MOVED:
+        return res, blocker
 
     # Коммит перемещения: обновим tile и мировые координаты
     try:
