@@ -30,8 +30,11 @@ class Game(arcade.Window):
         self.player_sprite = None
         self.camera = None
         self.target_zoom = None
-        # Состояние хода: "player" или "enemy"
+        # Состояние хода: "player" или другие состояния
         self.turn = "player"
+        # Очередь врагов для последовательной обработки
+        self._enemy_queue: list = []
+        self._current_enemy = None
 
     def setup(self):
         # Генерируем уровень
@@ -106,6 +109,25 @@ class Game(arcade.Window):
             cam_y + (self.player_sprite.center_y - cam_y) * 0.1
         )
 
+        # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
+        try:
+            if self.scene:
+                # arcade.Scene.update принимает delta_time в новых версиях
+                self.scene.update(delta_time)
+        except Exception:
+            # for compatibility, call without args
+            try:
+                self.scene.update()
+            except Exception:
+                pass
+
+        # Если игрок завершил свою анимацию — запускаем очередь врагов
+        if self.turn == "waiting_player_anim":
+            if not getattr(self.player_sprite, 'moving', False):
+                # Переключаемся в обработку врагов
+                self.turn = "enemy"
+                self.process_enemy_turns()
+
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
         # Если указано имя списка - ищем только в нём
@@ -174,18 +196,31 @@ class Game(arcade.Window):
             self.process_enemy_turns()
             return
 
-        # Если удалось переместиться — запускаем врагов
+        # Если удалось переместиться — запускаем очередь врагов после завершения анимации игрока
         if res == MoveResult.MOVED:
-            self.turn = "enemy"
-            self.process_enemy_turns()
+            # Ожидаем завершения анимации игрока перед действиями врагов
+            self.turn = "waiting_player_anim"
+            return
 
     def on_key_release(self, symbol, modifiers):
         pass
 
     def process_enemy_turns(self):
-        """Последовательная обработка ходов врагов: простая логика приближения/атаки."""
+        """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
+        # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
-        for enemy in enemies:
+        self._enemy_queue = [e for e in enemies if not getattr(e, 'removed', False)]
+        self._current_enemy = None
+        # Запускаем обработку
+        self._process_next_enemy()
+
+    def _process_next_enemy(self):
+        """
+        Обрабатывает следующий враг из очереди. Если враг начинает анимацию — ждём её завершения.
+        Иначе продолжаем к следующему врагу. По окончании возвращаем ход игроку.
+        """
+        while self._enemy_queue:
+            enemy = self._enemy_queue.pop(0)
             # Пропуск мёртвых/удалённых сущностей
             if getattr(enemy, "removed", False):
                 continue
@@ -221,11 +256,34 @@ class Game(arcade.Window):
                 if blocker is self.player_sprite:
                     enemy.attack(self.player_sprite)
                 continue
-            # Если MOVED — просто продолжаем к следующему врагу
+            # Если MOVED — нужно дождаться завершения анимации этого врага
             if res == MoveResult.MOVED:
-                continue
+                # Пометим текущего врага и установим hook на окончание анимации
+                self._current_enemy = enemy
+                # устанавливаем callback, который вызовет продолжение очереди
+                def _make_callback(e):
+                    def cb():
+                        # убираем callback и продолжим обработку
+                        try:
+                            e.on_move_complete = None
+                        except Exception:
+                            pass
+                        # после завершения анимации — продолжим со следующего врага
+                        self._current_enemy = None
+                        self._process_next_enemy()
+                    return cb
+                try:
+                    enemy.on_move_complete = _make_callback(enemy)
+                except Exception:
+                    # если не получилось установить callback — просто продолжим
+                    self._current_enemy = None
+                    continue
+                # ждем завершения анимации — выходим, дальнейшая обработка продолжится в callback
+                return
+            # иначе — продолжаем к следующему врагу
+            continue
 
-        # После всех врагов — обратно к игроку
+        # Очередь пуста — возвращаем ход игроку
         self.turn = "player"
 
 
