@@ -5,6 +5,7 @@ from arcade import gl
 from sv.core import Settings, GameState
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
+from sv.core.collision import MoveResult
 
 TILE_SIZE = Settings.TILE_SIZE
 
@@ -29,6 +30,8 @@ class Game(arcade.Window):
         self.player_sprite = None
         self.camera = None
         self.target_zoom = None
+        # Состояние хода: "player" или "enemy"
+        self.turn = "player"
 
     def setup(self):
         # Генерируем уровень
@@ -124,7 +127,10 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
-        # Перемещение теперь происходит через проверку уровня/сущностей
+        # Игрок может действовать только в свой ход
+        if self.turn != "player":
+            return
+
         dx = 0
         dy = 0
         if symbol in (arcade.key.W, arcade.key.UP):
@@ -135,6 +141,12 @@ class Game(arcade.Window):
             dx = -1
         elif symbol in (arcade.key.D, arcade.key.RIGHT):
             dx = 1
+        # Пропуск хода по пробелу
+        elif symbol == arcade.key.SPACE:
+            # Завершаем ход без действий — запускаем очередь врагов
+            self.turn = "enemy"
+            self.process_enemy_turns()
+            return
         # Зум камеры
         elif symbol in (arcade.key.PLUS, arcade.key.EQUAL):  # Приблизить
             self.target_zoom *= 1.5
@@ -144,40 +156,77 @@ class Game(arcade.Window):
         # Ограничиваем диапазон зума (1x–4x)
         self.target_zoom = max(1.0, min(4.0, self.target_zoom))
 
-        # Если была нажата клавиш направления — пробуем сделать ход
-        if dx != 0 or dy != 0:
-            cur_tx = self.player_sprite.tile_x
-            cur_ty = self.player_sprite.tile_y
-            target_tx = cur_tx + dx
-            target_ty = cur_ty + dy
+        if dx == 0 and dy == 0:
+            return
 
-            # Проверяем границы уровня
-            max_y = len(self.level)
-            max_x = len(self.level[0]) if max_y > 0 else 0
-            if not (0 <= target_tx < max_x and 0 <= target_ty < max_y):
-                return
+        # Используем безопасную попытку перемещения через API сущности
+        res, blocker = self.player_sprite.attempt_move(dx, dy, self.level, self.scene)
+        if res is None:
+            return
 
-            # Проверяем тайл (0 = стена, 1 = пол)
-            if self.level[target_ty][target_tx] == 0:
-                # Стена — ход невозможен
-                return
+        if res == MoveResult.BLOCKED_WALL:
+            return
+        if res == MoveResult.BLOCKED_ENTITY:
+            if blocker is not None and hasattr(self.player_sprite, 'attack'):
+                self.player_sprite.attack(blocker)
+            # Завершаем ход игрока
+            self.turn = "enemy"
+            self.process_enemy_turns()
+            return
 
-            # Проверяем наличие сущности в целевом тайле
-            entity = self.get_entity_at(target_tx, target_ty)
-            if entity and entity is not self.player_sprite:
-                # Враг/сущность на пути — атакуем
-                if hasattr(self.player_sprite, "attack"):
-                    self.player_sprite.attack(entity)
-                return
-
-            # Пустой проходимый тайл — двигаем игрока
-            self.player_sprite.tile_x = target_tx
-            self.player_sprite.tile_y = target_ty
-            self.player_sprite.center_x = target_tx * TILE_SIZE + TILE_SIZE // 2
-            self.player_sprite.center_y = target_ty * TILE_SIZE + TILE_SIZE // 2
+        # Если удалось переместиться — запускаем врагов
+        if res == MoveResult.MOVED:
+            self.turn = "enemy"
+            self.process_enemy_turns()
 
     def on_key_release(self, symbol, modifiers):
         pass
+
+    def process_enemy_turns(self):
+        """Последовательная обработка ходов врагов: простая логика приближения/атаки."""
+        enemies = list(self.scene.get_sprite_list("Skeleton") or [])
+        for enemy in enemies:
+            # Пропуск мёртвых/удалённых сущностей
+            if getattr(enemy, "removed", False):
+                continue
+            ex = enemy.tile_x
+            ey = enemy.tile_y
+            px = self.player_sprite.tile_x
+            py = self.player_sprite.tile_y
+            # Если рядом — атакуем
+            if abs(ex - px) + abs(ey - py) == 1:
+                if hasattr(enemy, "attack"):
+                    enemy.attack(self.player_sprite)
+                continue
+            # Иначе пытаемся подойти на 1 тайл по оси с приоритетом X
+            dx = 0
+            dy = 0
+            if ex < px:
+                dx = 1
+            elif ex > px:
+                dx = -1
+            elif ey < py:
+                dy = 1
+            elif ey > py:
+                dy = -1
+
+            # Используем безопасную попытку перемещения через API сущности
+            res, blocker = enemy.attempt_move(dx, dy, self.level, self.scene)
+            # Если блокирует стена — пропускаем
+            from sv.core.collision import MoveResult
+            if res == MoveResult.BLOCKED_WALL:
+                continue
+            # Если блокирует сущность — если это игрок, атакуем
+            if res == MoveResult.BLOCKED_ENTITY:
+                if blocker is self.player_sprite:
+                    enemy.attack(self.player_sprite)
+                continue
+            # Если MOVED — просто продолжаем к следующему врагу
+            if res == MoveResult.MOVED:
+                continue
+
+        # После всех врагов — обратно к игроку
+        self.turn = "player"
 
 
 def main():
