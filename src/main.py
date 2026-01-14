@@ -141,6 +141,12 @@ class Game(arcade.Window):
             dx = -1
         elif symbol in (arcade.key.D, arcade.key.RIGHT):
             dx = 1
+        # Пропуск хода по пробелу
+        elif symbol == arcade.key.SPACE:
+            # Завершаем ход без действий — запускаем очередь врагов
+            self.turn = "enemy"
+            self.process_enemy_turns()
+            return
         # Зум камеры
         elif symbol in (arcade.key.PLUS, arcade.key.EQUAL):  # Приблизить
             self.target_zoom *= 1.5
