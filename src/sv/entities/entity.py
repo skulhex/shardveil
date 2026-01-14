@@ -5,15 +5,37 @@ TILE_SIZE = Settings.TILE_SIZE
 
 class Entity(arcade.Sprite):
     """Базовая сущность игрового мира"""
-    def __init__(self, texture, tile_x: int, tile_y: int, hp: int = 1):
+    def __init__(self, texture, tile_x: int, tile_y: int, hp: int = 1, blocking: bool = True):
         super().__init__(str(texture))
 
         self.hp = hp
-        self.tile_x = tile_x
-        self.tile_y = tile_y
+        self.tile_x = int(tile_x)
+        self.tile_y = int(tile_y)
 
-        self.center_x = tile_x * TILE_SIZE + TILE_SIZE // 2
-        self.center_y = tile_y * TILE_SIZE + TILE_SIZE // 2
+        # Устанавливаем мировые координаты
+        self.center_x = self.tile_x * TILE_SIZE + TILE_SIZE // 2
+        self.center_y = self.tile_y * TILE_SIZE + TILE_SIZE // 2
+
+        # По умолчанию сущность блокирует движение (предметы могут быть non-blocking)
+        self.blocking = bool(blocking)
+
+    def move_to(self, tile_x: int, tile_y: int):
+        """Прямое перемещение сущности в тайловых координатах (без проверок)."""
+        self.tile_x = int(tile_x)
+        self.tile_y = int(tile_y)
+        self.center_x = self.tile_x * TILE_SIZE + TILE_SIZE // 2
+        self.center_y = self.tile_y * TILE_SIZE + TILE_SIZE // 2
+
+    def attempt_move(self, dx: int, dy: int, level, scene):
+        """Попытка перемещения: wrapper над sv.core.collision.attempt_move.
+
+        Возвращает (MoveResult, blocker)
+        """
+        try:
+            from sv.core.collision import attempt_move as _attempt_move
+        except Exception:
+            return None, None
+        return _attempt_move(self, dx, dy, level, scene)
 
     def take_damage(self, amount: int):
         self.hp -= amount
@@ -24,6 +46,7 @@ class Entity(arcade.Sprite):
         self.remove_from_sprite_lists()
 
     def update(self, *args, **kwargs):
+        # Совместимая сигнатура с arcade.Sprite.update
         super().update(*args, **kwargs)
 
     def take_turn(self):
@@ -40,6 +63,7 @@ class Entity(arcade.Sprite):
 
     def attack(self, target: "Entity", damage: int = 1):
         """Наносит урон другому объекту-существу.
+
         По умолчанию наносит 1 урона. Проверяет, что цель не None и не сам субъект.
         """
         if target is None:
@@ -55,7 +79,7 @@ class Player(Entity):
     """Класс игрока"""
     def __init__(self, tile_x: int, tile_y: int):
         texture = ":assets:/sprites/player.png"
-        super().__init__(texture, tile_x, tile_y, hp=10)
+        super().__init__(texture, tile_x, tile_y, hp=10, blocking=True)
 
     def take_turn(self):
         """Ход игрока: ждет ввода от пользователя."""
