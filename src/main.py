@@ -2,7 +2,7 @@ import sys
 import time
 from pathlib import Path
 import arcade
-from arcade import gl
+from arcade import gl, gui
 from sv.core import Settings, GameState
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
@@ -20,6 +20,29 @@ arcade.resources.add_resource_handle("assets", asset_dir)
 # отключение сглаживания для пиксельной графики
 arcade.SpriteList.DEFAULT_TEXTURE_FILTER = gl.NEAREST, gl.NEAREST
 
+# Прогрес бар
+class ProgressBar(arcade.gui.UIAnchorLayout):
+    value = arcade.gui.Property(0.0)
+    def __init__(self, value: float = 1.0, width=100,
+                 height=20, color: arcade.types.Color = arcade.color.GREEN):
+        # Инициализируем UIAnchorLayout
+        super().__init__(width=width, height=height, size_hint=None)
+
+        # Выставляем цвет рамки и фон бара
+        self.with_background(color=arcade.uicolor.GRAY_CONCRETE)
+        self.with_border(color=arcade.uicolor.BLACK)
+
+        self._bar = arcade.gui.UISpace(color=color, size_hint=(value, 1))
+        self.add(self._bar, anchor_x="left", anchor_y="top")
+        self.value = value
+
+        # Тригерим рендер при смене значений
+        arcade.gui.bind(self, "value", self.trigger_render)
+
+    def _update_bar(self):
+        self._bar.size_hint = (self.value, 1)
+        self._bar.visible = self.value > 0
+
 class Game(arcade.Window):
     def __init__(self):
         self.settings = Settings()
@@ -28,6 +51,11 @@ class Game(arcade.Window):
             height=self.settings.screen_height,
             title=self.settings.title
         )
+
+        # HUD, etc
+        self.ui = arcade.gui.UIManager()
+        self.ui.enable()
+        
         self.level = None
         self.scene = None
         self.player_sprite = None
@@ -103,13 +131,34 @@ class Game(arcade.Window):
         # Создаём врага
         skeleton = Skeleton(tile_x=10, tile_y=5)
         self.scene.add_sprite("Skeleton", skeleton)
+        
+        # Создаем hud bar
+
+        # Инициализируем подложку
+        self.hud_anchor = arcade.gui.UIAnchorLayout()
+        self.bars_layout = arcade.gui.UIBoxLayout(vertical=False, 
+                                                  space_between=20, align="center")
+        # Инициализируем бар и добавляем в подложку
+        self.pbar = ProgressBar(color=arcade.color.RED, 
+                                value=1.0, width=200, height=15)
+        self.bars_layout.add(self.pbar)
+        self.hud_anchor.add(self.bars_layout, anchor_x="left", 
+                            anchor_y="bottom", align_y=10, align_x=8)
+
+        # Добавляем подложку в UI
+        self.ui.add(self.hud_anchor)
 
     def on_draw(self):
         self.clear()
         self.camera.use()
         self.scene.draw()
+        self.ui.draw()
 
     def on_update(self, delta_time):
+        # Обновляем значение hp(хп * флоат_значение)
+        self.pbar.value = self.player_sprite.hp * 0.1
+        self.pbar._update_bar()
+        
         # Плавная интерполяция зума камеры
         self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
         # Плавное следование камеры за игроком
