@@ -1,3 +1,4 @@
+import random
 import sys
 import time
 from pathlib import Path
@@ -77,9 +78,9 @@ class Game(arcade.Window):
         self._pending_move: dict | None = None
 
     def setup(self):
-        # Генерируем уровень
-        gen = LevelGenerator(width=16, height=16)
-        level = gen.generate()
+        # Генерируем уровень (BSP: 0=void, 1=floor, 2=wall, 3=stairs)
+        gen = LevelGenerator(width=64, height=48)
+        level, spawn_xy, stairs_xy = gen.generate()
 
         # Создаём сцену
         self.level = level
@@ -106,21 +107,25 @@ class Game(arcade.Window):
                 world_x = x * TILE_SIZE
                 world_y = y * TILE_SIZE
 
-                if tile == 1:
+                if tile == 0:
+                    # void — не рисуем
+                    continue
+                if tile == 1 or tile == 3:
+                    # floor или stairs (лестницу пока рисуем как пол)
                     sprite = arcade.Sprite()
                     sprite.texture = floor_texture
                     sprite.center_x = world_x + TILE_SIZE / 2
                     sprite.center_y = world_y + TILE_SIZE / 2
                     self.scene["Ground"].append(sprite)
-                else:
+                elif tile == 2:
                     sprite = arcade.Sprite()
                     sprite.texture = wall_texture
                     sprite.center_x = world_x + TILE_SIZE / 2
                     sprite.center_y = world_y + TILE_SIZE / 2
                     self.scene["Walls"].append(sprite)
 
-        # Создаём игрока
-        self.player_sprite = Player(tile_x=8, tile_y=5)
+        # Создаём игрока в точке спавна с генератора
+        self.player_sprite = Player(tile_x=spawn_xy[0], tile_y=spawn_xy[1])
         self.scene.add_sprite("Player", self.player_sprite)
         # Настраиваем камеру
         self.camera = arcade.camera.Camera2D()
@@ -128,8 +133,20 @@ class Game(arcade.Window):
         self.target_zoom = 2.0  # начальный целевой зум
         self.camera.position = (self.player_sprite.center_x, self.player_sprite.center_y)
 
-        # Создаём врага
-        skeleton = Skeleton(tile_x=10, tile_y=5)
+        # Скелет на случайном полу, не на спавне и не на лестнице
+        floor_tiles = [
+            (x, y)
+            for y in range(len(level))
+            for x in range(len(level[0]))
+            if level[y][x] in (1, 3)
+            and (x, y) != spawn_xy
+            and (x, y) != stairs_xy
+        ]
+        if floor_tiles:
+            sx, sy = random.choice(floor_tiles)
+            skeleton = Skeleton(tile_x=sx, tile_y=sy)
+        else:
+            skeleton = Skeleton(tile_x=spawn_xy[0] + 1, tile_y=spawn_xy[1])
         self.scene.add_sprite("Skeleton", skeleton)
         
         # Создаем hud bar
