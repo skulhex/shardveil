@@ -8,8 +8,8 @@ class MoveResult(Enum):
 
 
 def is_tile_walkable(level, tx: int, ty: int) -> bool:
-    """Возвращает True, если тайл проходим (в пределах уровня и != 0).
-    Предположение: level[y][x] — 0 = стена, !=0 = проходимо.
+    """Возвращает True, если тайл проходим (в пределах уровня).
+    Проходимы только FLOOR (1) и STAIRS (3). VOID (0) и WALL (2) — нет.
     """
     if level is None:
         return False
@@ -20,7 +20,8 @@ def is_tile_walkable(level, tx: int, ty: int) -> bool:
     if not (0 <= tx < max_x and 0 <= ty < max_y):
         return False
     try:
-        return level[ty][tx] != 0
+        from sv.world.tiles import WALKABLE
+        return level[ty][tx] in WALKABLE
     except Exception:
         return False
 
