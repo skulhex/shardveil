@@ -95,11 +95,12 @@ class Game(arcade.Window):
 
         # Загрузка тайлов из спрайтшита
         tiles = arcade.load_spritesheet(tileset_image)
-        textures = tiles.get_texture_grid((TILE_SIZE, TILE_SIZE), columns=2, count=2)
+        textures = tiles.get_texture_grid((TILE_SIZE, TILE_SIZE), columns=3, count=3)
 
         # Назначение текстур для пола и стен
         floor_texture = textures[0]
         wall_texture = textures[1]
+        stairs_texture = textures[2]
 
         for y in range(len(level)):
             for x in range(len(level[0])):
@@ -110,10 +111,17 @@ class Game(arcade.Window):
                 if tile == 0:
                     # void — не рисуем
                     continue
-                if tile == 1 or tile == 3:
-                    # floor или stairs (лестницу пока рисуем как пол)
+                if tile == 1:
+                    # floor
                     sprite = arcade.Sprite()
                     sprite.texture = floor_texture
+                    sprite.center_x = world_x + TILE_SIZE / 2
+                    sprite.center_y = world_y + TILE_SIZE / 2
+                    self.scene["Ground"].append(sprite)
+                elif tile == 3:
+                    # stairs
+                    sprite = arcade.Sprite()
+                    sprite.texture = stairs_texture
                     sprite.center_x = world_x + TILE_SIZE / 2
                     sprite.center_y = world_y + TILE_SIZE / 2
                     self.scene["Ground"].append(sprite)
