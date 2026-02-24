@@ -3,11 +3,12 @@ import sys
 import time
 from pathlib import Path
 import arcade
-from arcade import gl, gui
-from sv.core import Settings, GameState
+from arcade import gl
+from sv.core import Settings
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.core.collision import MoveResult
+from sv.ui import ProgressBar
 
 TILE_SIZE = Settings.TILE_SIZE
 # Время в секундах для учета двойных нажатий клавиш направления (для диагоналей)
@@ -20,29 +21,6 @@ arcade.resources.add_resource_handle("assets", asset_dir)
 
 # отключение сглаживания для пиксельной графики
 arcade.SpriteList.DEFAULT_TEXTURE_FILTER = gl.NEAREST, gl.NEAREST
-
-# Прогрес бар
-class ProgressBar(arcade.gui.UIAnchorLayout):
-    value = arcade.gui.Property(0.0)
-    def __init__(self, value: float = 1.0, width=100,
-                 height=20, color: arcade.types.Color = arcade.color.GREEN):
-        # Инициализируем UIAnchorLayout
-        super().__init__(width=width, height=height, size_hint=None)
-
-        # Выставляем цвет рамки и фон бара
-        self.with_background(color=arcade.uicolor.GRAY_CONCRETE)
-        self.with_border(color=arcade.uicolor.BLACK)
-
-        self._bar = arcade.gui.UISpace(color=color, size_hint=(value, 1))
-        self.add(self._bar, anchor_x="left", anchor_y="top")
-        self.value = value
-
-        # Тригерим рендер при смене значений
-        arcade.gui.bind(self, "value", self.trigger_render)
-
-    def _update_bar(self):
-        self._bar.size_hint = (self.value, 1)
-        self._bar.visible = self.value > 0
 
 class Game(arcade.Window):
     def __init__(self):
@@ -182,7 +160,7 @@ class Game(arcade.Window):
     def on_update(self, delta_time):
         # Обновляем значение hp(хп * флоат_значение)
         self.pbar.value = self.player_sprite.hp * 0.1
-        self.pbar._update_bar()
+        self.pbar.update_bar()
         
         # Плавная интерполяция зума камеры
         self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
@@ -194,16 +172,8 @@ class Game(arcade.Window):
         )
 
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
-        try:
-            if self.scene:
-                # arcade.Scene.update принимает delta_time в новых версиях
-                self.scene.update(delta_time)
-        except Exception:
-            # for compatibility, call without args
-            try:
-                self.scene.update()
-            except Exception:
-                pass
+        if self.scene:
+            self.scene.update(delta_time)
 
         # Небольшая очистка старых меток нажатий, чтобы словарь не рос бесконечно
         now = time.time()
