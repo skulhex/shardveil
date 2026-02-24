@@ -42,7 +42,7 @@ def get_blocking_entity(scene, tx: int, ty: int, ignore=None):
                     if s is ignore:
                         continue
                     if getattr(s, "tile_x", None) == tx and getattr(s, "tile_y", None) == ty:
-                        if getattr(s, "blocking", True):
+                        if getattr(s, "blocking", False):
                             return s
             except Exception:
                 continue
@@ -60,7 +60,7 @@ def get_blocking_entity(scene, tx: int, ty: int, ignore=None):
             if s is ignore:
                 continue
             if getattr(s, "tile_x", None) == tx and getattr(s, "tile_y", None) == ty:
-                if getattr(s, "blocking", True):
+                if getattr(s, "blocking", False):
                     return s
     return None
 
