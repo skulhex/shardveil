@@ -58,7 +58,7 @@ python -m pip install -r requirements.txt
 
 Запуск игры:
 ```
-python -m src.main
+python src/main.py
 ```
 
 ## План развития
