@@ -1,6 +1,7 @@
 import random
 import sys
 import time
+from collections import deque
 from pathlib import Path
 import arcade
 from arcade import gl
@@ -43,7 +44,7 @@ class Game(arcade.Window):
         # Состояние хода: "player" или другие состояния
         self.turn = "player"
         # Очередь врагов для последовательной обработки
-        self._enemy_queue: list = []
+        self._enemy_queue: deque = deque()
         self._current_enemy = None
         # Набор текущих зажатых клавиш (для поддержки диагоналей)
         # Будем в этот set класть только ключи-направления
@@ -159,7 +160,7 @@ class Game(arcade.Window):
 
     def on_update(self, delta_time):
         # Обновляем значение hp(хп * флоат_значение)
-        self.pbar.value = self.player_sprite.hp * 0.1
+        self.pbar.value = self.player_sprite.hp / self.player_sprite.max_hp
         self.pbar.update_bar()
         
         # Плавная интерполяция зума камеры
@@ -179,10 +180,7 @@ class Game(arcade.Window):
         now = time.time()
         to_del = [k for k, t in self._key_timestamps.items() if now - t > DIAGONAL_TOLERANCE * 3]
         for k in to_del:
-            try:
-                del self._key_timestamps[k]
-            except Exception:
-                pass
+            self._key_timestamps.pop(k, None)
 
         # Если есть отложенный ход и он просрочен — выполним его
         if self._pending_move is not None:
@@ -283,67 +281,34 @@ class Game(arcade.Window):
                 self._pending_move = {'time': now, 'dx': 0, 'dy': 0}
             return
 
-        # Вычисляем направление по текущим нажатым клавишам (поддержка диагоналей)
-        dx = 0
-        dy = 0
-
-        def key_active(k):
-            # Активна, если удерживается сейчас или была нажата недавно в окне tolerance
-            if k in self._pressed_keys:
-                return True
-            ts = self._key_timestamps.get(k)
-            return (ts is not None) and (now - ts <= DIAGONAL_TOLERANCE)
-
-        if key_active(arcade.key.W) or key_active(arcade.key.UP):
-            dy = 1
-        if key_active(arcade.key.S) or key_active(arcade.key.DOWN):
-            dy = -1
-        if key_active(arcade.key.A) or key_active(arcade.key.LEFT):
-            dx = -1
-        if key_active(arcade.key.D) or key_active(arcade.key.RIGHT):
-            dx = 1
-
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
-            # Завершаем ход без действий — запускаем очередь врагов
             self.turn = "enemy"
             self.process_enemy_turns()
             return
 
         # Зум камеры
-        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):  # Приблизить
-            self.target_zoom *= 1.5
-        elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):  # Отдалить
-            self.target_zoom /= 1.5
+        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
+            self.target_zoom = min(4.0, self.target_zoom * 1.5)
+        elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):
+            self.target_zoom = max(1.0, self.target_zoom / 1.5)
 
-        # Ограничиваем диапазон зума (1x–4x)
-        self.target_zoom = max(1.0, min(4.0, self.target_zoom))
-
-        if dx == 0 and dy == 0:
-            return
-
-        # Выполняем попытку перемещения сразу
-        self._try_player_move(dx, dy)
-        return
+    def _move_with_fallback(self, entity, dx, dy):
+        """Попытка перемещения с fallback по осям при диагональном столкновении со стеной."""
+        res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
+        if res == MoveResult.MOVED:
+            return res, blocker
+        if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
+            res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
+            if res2 == MoveResult.MOVED:
+                return res2, blocker2
+            res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
+            return res3, blocker3
+        return res, blocker
 
     def _try_player_move(self, dx, dy):
-        """
-        Попытка перемещения игрока с fallback (использует entity.attempt_move и управляет сменой хода).
-        Возвращает (res, blocker).
-        """
-        def try_move_with_fallback(entity, dx, dy):
-            res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
-            if res == MoveResult.MOVED:
-                return res, blocker
-            if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
-                res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
-                if res2 == MoveResult.MOVED:
-                    return res2, blocker2
-                res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
-                return res3, blocker3
-            return res, blocker
-
-        res, blocker = try_move_with_fallback(self.player_sprite, dx, dy)
+        """Попытка перемещения игрока с управлением сменой хода."""
+        res, blocker = self._move_with_fallback(self.player_sprite, dx, dy)
         if res is None:
             return None, None
         if res == MoveResult.BLOCKED_WALL:
@@ -362,21 +327,13 @@ class Game(arcade.Window):
 
     def on_key_release(self, symbol, modifiers):
         # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
-        try:
-            if symbol in self._pressed_keys:
-                self._pressed_keys.remove(symbol)
-            # Не удаляем метку времени: сохраняем время последнего нажатия, чтобы
-            # второй клик в пределах DIAGONAL_TOLERANCE засчитался как диагональ.
-            # Метки будут автоматически проигнорированы, когда станут старше tolerance.
-        except Exception:
-            pass
-        return
+        self._pressed_keys.discard(symbol)
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
         # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
-        self._enemy_queue = [e for e in enemies if not getattr(e, 'removed', False)]
+        self._enemy_queue = deque(e for e in enemies if not getattr(e, 'removed', False))
         self._current_enemy = None
         # Запускаем обработку
         self._process_next_enemy()
@@ -387,7 +344,7 @@ class Game(arcade.Window):
         Иначе продолжаем к следующему врагу. По окончании возвращаем ход игроку.
         """
         while self._enemy_queue:
-            enemy = self._enemy_queue.pop(0)
+            enemy = self._enemy_queue.popleft()
             # Пропуск мёртвых/удалённых сущностей
             if getattr(enemy, "removed", False):
                 continue
@@ -413,20 +370,7 @@ class Game(arcade.Window):
             elif ey > py:
                 dy = -1
 
-            # Используем безопасную попытку перемещения через метод сущности (анимация)
-            def try_move_with_fallback_enemy(entity, dx, dy):
-                res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
-                if res == MoveResult.MOVED:
-                    return res, blocker
-                if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
-                    res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
-                    if res2 == MoveResult.MOVED:
-                        return res2, blocker2
-                    res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
-                    return res3, blocker3
-                return res, blocker
-
-            res, blocker = try_move_with_fallback_enemy(enemy, dx, dy)
+            res, blocker = self._move_with_fallback(enemy, dx, dy)
             # Если блокирует стена — пропускаем
             if res == MoveResult.BLOCKED_WALL:
                 continue
@@ -437,26 +381,16 @@ class Game(arcade.Window):
                 continue
             # Если MOVED — нужно дождаться завершения анимации этого врага
             if res == MoveResult.MOVED:
-                # Пометим текущего врага и установим hook на окончание анимации
                 self._current_enemy = enemy
-                # устанавливаем callback, который вызовет продолжение очереди
+
                 def _make_callback(e):
                     def cb():
-                        # убираем callback и продолжим обработку
-                        try:
-                            e.on_move_complete = None
-                        except Exception:
-                            pass
-                        # после завершения анимации — продолжим со следующего врага
+                        e.on_move_complete = None
                         self._current_enemy = None
                         self._process_next_enemy()
                     return cb
-                try:
-                    enemy.on_move_complete = _make_callback(enemy)
-                except Exception:
-                    # если не получилось установить callback — просто продолжим
-                    self._current_enemy = None
-                    continue
+
+                enemy.on_move_complete = _make_callback(enemy)
                 # ждем завершения анимации — выходим, дальнейшая обработка продолжится в callback
                 return
             # иначе — продолжаем к следующему врагу
