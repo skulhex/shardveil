@@ -115,6 +115,9 @@ class LevelGenerator:
                         level[y][x] = FLOOR
             spawn_xy = (cx, cy)
             stairs_xy = (cx + 1, cy)
+            sx, sy = stairs_xy
+            if 0 <= sy < self.height and 0 <= sx < self.width:
+                level[sy][sx] = STAIRS
             return (level, spawn_xy, stairs_xy)
 
         # Спавн в центре первой комнаты
@@ -132,5 +135,18 @@ class LevelGenerator:
             sy = random.randint(sy1, sy2)
             level[sy][sx] = STAIRS
             stairs_xy = (sx, sy)
+        else:
+            # если комнатa одна — разместим лестницу внутри неё, но не в точке спавна
+            placed = False
+            for y in range(y1, y2 + 1):
+                for x in range(x1, x2 + 1):
+                    if (x, y) == spawn_xy:
+                        continue
+                    level[y][x] = STAIRS
+                    stairs_xy = (x, y)
+                    placed = True
+                    break
+                if placed:
+                    break
 
         return (level, spawn_xy, stairs_xy)
