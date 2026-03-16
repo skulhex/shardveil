@@ -9,7 +9,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from sv.world.tiles import WALKABLE
+from sv.world.tiles import WALKABLE, STAIRS
 
 HAS_TCOD = find_spec("tcod") is not None
 
@@ -31,6 +31,7 @@ class LevelGeneratorTests(unittest.TestCase):
 
         self.assertIn(level[sy][sx], WALKABLE)
         self.assertIn(level[ty][tx], WALKABLE)
+        self.assertEqual(level[ty][tx], STAIRS)
 
 
 if __name__ == "__main__":
