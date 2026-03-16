@@ -182,13 +182,17 @@ class Game(arcade.Window):
         for k in to_del:
             self._key_timestamps.pop(k, None)
 
+        # Если ход уже не наш — сбрасываем отложенное движение
+        if self.turn != "player" and self._pending_move is not None:
+            self._pending_move = None
+
         # Если есть отложенный ход и он просрочен — выполним его
         if self._pending_move is not None:
             if now - self._pending_move.get('time', 0.0) >= DIAGONAL_TOLERANCE:
                 pdx = self._pending_move.get('dx', 0)
                 pdy = self._pending_move.get('dy', 0)
                 self._pending_move = None
-                if self.turn == 'player':
+                if self.turn == 'player' and (pdx != 0 or pdy != 0):
                     self._try_player_move(pdx, pdy)
 
         # Если игрок завершил свою анимацию — запускаем очередь врагов
@@ -283,6 +287,7 @@ class Game(arcade.Window):
 
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
+            self._pending_move = None
             self.turn = "enemy"
             self.process_enemy_turns()
             return
