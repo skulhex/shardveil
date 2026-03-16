@@ -9,6 +9,7 @@ class Entity(arcade.Sprite):
         super().__init__(str(texture))
 
         self.hp = hp
+        self.max_hp = hp
         self.tile_x = int(tile_x)
         self.tile_y = int(tile_y)
 
