@@ -30,11 +30,30 @@ shardveil/
 ```
 
 ## Установка и запуск
-Склонируйте репозиторий и установите зависимости через pip:
+Рекомендуется использовать локальное виртуальное окружение `.venv`, чтобы не устанавливать зависимости в системный Python.
+
+Склонируйте репозиторий:
 ```
 git clone https://github.com/skulhex/shardveil
 cd shardveil
-pip install -r requirements.txt
+```
+
+Создайте и активируйте виртуальное окружение:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Для Windows (PowerShell):
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Установите зависимости:
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
 Запуск игры:
