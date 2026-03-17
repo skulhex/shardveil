@@ -31,6 +31,17 @@ class Game(arcade.Window):
             height=self.settings.screen_height,
             title=self.settings.title
         )
+        from collections import deque
+
+        self._move_buffer = deque()
+        self._move_buffer = deque()
+
+        self._last_input = (0, 0)
+
+        self._hold_timer = 0
+        self._hold_delay = 0.12  # скорость авто-движения
+
+        self._last_move = (0, 0)  # чтобы не биться в стену
 
         # HUD, etc
         self.ui = arcade.gui.UIManager()
@@ -46,10 +57,8 @@ class Game(arcade.Window):
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
         self._current_enemy = None
-        # Набор текущих зажатых клавиш (для поддержки диагоналей)
         # Будем в этот set класть только ключи-направления
         self._pressed_keys: set[int] = set()
-        # Временные метки последних нажатий клавиш (symbol -> timestamp)
         # Не удаляем метки при отпускании, чтобы учесть недавние нажатия в окне tolerance
         self._key_timestamps: dict[int, float] = {}
 
@@ -198,9 +207,46 @@ class Game(arcade.Window):
         # Если игрок завершил свою анимацию — запускаем очередь врагов
         if self.turn == "waiting_player_anim":
             if not getattr(self.player_sprite, "moving", False):
-                # Переключаемся в обработку врагов
-                self.turn = "enemy"
-                self.process_enemy_turns()
+
+                # если есть ещё ввод — продолжаем
+                if self._move_buffer:
+                    self.turn = "player"
+                else:
+                    self.turn = "enemy"
+                    self.process_enemy_turns()
+
+    # ОБРАБОТКА БУФЕРА
+        if self.turn == "player" and self._move_buffer:
+            dx, dy = self._move_buffer.popleft()
+            self._try_player_move(dx, dy)
+
+        # УДЕРЖАНИЕ КЛАВИШИ
+        if self.turn == "player":
+            self._hold_timer -= delta_time
+
+            if self._hold_timer <= 0:
+                dx, dy = 0, 0
+
+                if arcade.key.W in self._pressed_keys or arcade.key.UP in self._pressed_keys:
+                    dy = 1
+                if arcade.key.S in self._pressed_keys or arcade.key.DOWN in self._pressed_keys:
+                    dy = -1
+                if arcade.key.D in self._pressed_keys or arcade.key.RIGHT in self._pressed_keys:
+                    dx = 1
+                if arcade.key.A in self._pressed_keys or arcade.key.LEFT in self._pressed_keys:
+                    dx = -1
+
+                if dx != 0 or dy != 0:
+                    self._last_input = (dx, dy)
+                    self._smart_add_move(dx, dy)
+
+                self._hold_timer = self._hold_delay
+
+        # ВЫПОЛНЕНИЕ БУФЕРА
+        if self.turn == "player" and self._move_buffer:
+            dx, dy = self._move_buffer.popleft()
+            self._last_move = (dx, dy)
+            self._try_player_move(dx, dy)
 
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
@@ -223,9 +269,24 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
-        # Игрок может действовать только в свой ход
         if self.turn != "player":
             return
+
+        dx, dy = 0, 0
+
+        if symbol in (arcade.key.W, arcade.key.UP):
+            dy = 1
+        elif symbol in (arcade.key.S, arcade.key.DOWN):
+            dy = -1
+        elif symbol in (arcade.key.D, arcade.key.RIGHT):
+            dx = 1
+        elif symbol in (arcade.key.A, arcade.key.LEFT):
+            dx = -1
+        else:
+            return
+
+        self._last_input = (dx, dy)
+        self._smart_add_move(dx, dy)
 
         # Перечень клавиш направления
         dir_keys = (
@@ -371,6 +432,21 @@ class Game(arcade.Window):
             return res, blocker
         return res, blocker
 
+    def _smart_add_move(self, dx, dy):
+        move = (dx, dy)
+
+        # не добавляем повтор если уже в конце буфера
+        if self._move_buffer and self._move_buffer[-1] == move:
+            return
+
+        # не спамим движение, которое не сработало
+        if move == self._last_move:
+            return
+
+        # ограничим размер буфера
+        if len(self._move_buffer) < 3:
+            self._move_buffer.append(move)
+
     def on_key_release(self, symbol, modifiers):
         # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
         self._pressed_keys.discard(symbol)
@@ -444,6 +520,11 @@ class Game(arcade.Window):
 
         # Очередь пуста — возвращаем ход игроку
         self.turn = "player"
+
+    def _add_move_to_buffer(self, dx, dy):
+        # ограничим буфер (например 3 шага)
+        if len(self._move_buffer) < 3:
+            self._move_buffer.append((dx, dy))
 
 
 def main():
