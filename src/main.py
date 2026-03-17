@@ -330,6 +330,47 @@ class Game(arcade.Window):
             return res, blocker
         return res, blocker
 
+        if dx == 0 and dy == 0:
+            return
+
+        # Выполняем попытку перемещения сразу
+        self._try_player_move(dx, dy)
+        return
+
+    def _try_player_move(self, dx, dy):
+        """
+        Попытка перемещения игрока с fallback (использует entity.attempt_move и управляет сменой хода).
+        Возвращает (res, blocker).
+        """
+        def try_move_with_fallback(entity, dx, dy):
+            res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
+            if res == MoveResult.MOVED:
+                return res, blocker
+            if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
+                res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
+                if res2 == MoveResult.MOVED:
+                    return res2, blocker2
+                res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
+                return res3, blocker3
+            return res, blocker
+
+        res, blocker = try_move_with_fallback(self.player_sprite, dx, dy)
+        if res is None:
+            return None, None
+        if res == MoveResult.BLOCKED_WALL:
+            return res, blocker
+        if res == MoveResult.BLOCKED_ENTITY:
+            if blocker is not None and hasattr(self.player_sprite, 'attack'):
+                self.player_sprite.attack(blocker)
+            # Завершаем ход игрока
+            self.turn = "enemy"
+            self.process_enemy_turns()
+            return res, blocker
+        if res == MoveResult.MOVED:
+            self.turn = "waiting_player_anim"
+            return res, blocker
+        return res, blocker
+
     def on_key_release(self, symbol, modifiers):
         # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
         self._pressed_keys.discard(symbol)
