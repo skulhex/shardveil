@@ -5,6 +5,7 @@ from collections import deque
 from pathlib import Path
 import arcade
 from arcade import gl
+from arcade.future.light import Light, LightLayer
 from sv.core import Settings
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
@@ -41,6 +42,9 @@ class Game(arcade.Window):
         self.player_sprite = None
         self.camera = None
         self.target_zoom = None
+        self.light_layer = None
+        self.player_light = None
+        self.light_pbar = None
         # Состояние хода: "player" или другие состояния
         self.turn = "player"
         # Очередь врагов для последовательной обработки
@@ -146,22 +150,54 @@ class Game(arcade.Window):
         self.pbar = ProgressBar(color=arcade.color.RED, 
                                 value=1.0, width=200, height=15)
         self.bars_layout.add(self.pbar)
+        self.light_pbar = ProgressBar(color=arcade.color.GOLD, 
+                                       value=1.0, width=200, height=15)
+        self.bars_layout.add(self.light_pbar)
         self.hud_anchor.add(self.bars_layout, anchor_x="left", 
                             anchor_y="bottom", align_y=10, align_x=8)
+
+        # Подключаем базовый световой слой через arcade.gl
+        self.light_layer = LightLayer(self.settings.screen_width, self.settings.screen_height)
+        self.light_layer.set_background_color((0, 0, 0, 255))
+        self.player_light = Light(
+            self.player_sprite.center_x,
+            self.player_sprite.center_y,
+            radius=180,
+            color=(255, 244, 216),
+            mode="soft",
+        )
+        self.light_layer.add(self.player_light)
 
         # Добавляем подложку в UI
         self.ui.add(self.hud_anchor)
 
+    def on_resize(self, width, height):
+        super().on_resize(width, height)
+        if self.camera is not None:
+            self.camera.match_window()
+        if self.light_layer is not None:
+            self.light_layer.resize(width, height)
+
     def on_draw(self):
         self.clear()
-        self.camera.use()
-        self.scene.draw()
+        with self.light_layer:
+            self.camera.use()
+            self.scene.draw()
+        self.light_layer.draw(ambient_color=(28, 24, 34, 255))
         self.ui.draw()
 
     def on_update(self, delta_time):
         # Обновляем значение hp(хп * флоат_значение)
         self.pbar.value = self.player_sprite.hp / self.player_sprite.max_hp
         self.pbar.update_bar()
+        self.light_pbar.value = self._player_light_ratio()
+        self.light_pbar.update_bar()
+
+        # Обновляем позицию света игрока и его радиус в зависимости от состояния анимации движения
+        if self.player_light is not None and self.player_sprite is not None:
+            self.player_light.position = self.player_sprite.position
+            ratio = self._player_light_ratio()
+            self.player_light.radius = 160 + 35 * ratio
         
         # Плавная интерполяция зума камеры
         self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
@@ -201,6 +237,30 @@ class Game(arcade.Window):
                 # Переключаемся в обработку врагов
                 self.turn = "enemy"
                 self.process_enemy_turns()
+
+    def _player_light_ratio(self) -> float:
+        if not self.player_sprite:
+            return 0.0
+        try:
+            return self.player_sprite.light_ratio()
+        except Exception:
+            return 0.0
+
+    def _recover_player_light(self, amount: int) -> int:
+        if not self.player_sprite:
+            return 0
+        try:
+            return self.player_sprite.recover_light(amount)
+        except Exception:
+            return 0
+
+    def _consume_player_light(self, amount: int = 1) -> int:
+        if not self.player_sprite:
+            return 0
+        try:
+            return self.player_sprite.spend_light(amount)
+        except Exception:
+            return 0
 
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
@@ -288,6 +348,7 @@ class Game(arcade.Window):
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
             self._pending_move = None
+            self._recover_player_light(2)
             self.turn = "enemy"
             self.process_enemy_turns()
             return
@@ -321,52 +382,13 @@ class Game(arcade.Window):
         if res == MoveResult.BLOCKED_ENTITY:
             if blocker is not None and hasattr(self.player_sprite, 'attack'):
                 self.player_sprite.attack(blocker)
+                self._consume_player_light(1)
             # Завершаем ход игрока
             self.turn = "enemy"
             self.process_enemy_turns()
             return res, blocker
         if res == MoveResult.MOVED:
-            self.turn = "waiting_player_anim"
-            return res, blocker
-        return res, blocker
-
-        if dx == 0 and dy == 0:
-            return
-
-        # Выполняем попытку перемещения сразу
-        self._try_player_move(dx, dy)
-        return
-
-    def _try_player_move(self, dx, dy):
-        """
-        Попытка перемещения игрока с fallback (использует entity.attempt_move и управляет сменой хода).
-        Возвращает (res, blocker).
-        """
-        def try_move_with_fallback(entity, dx, dy):
-            res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
-            if res == MoveResult.MOVED:
-                return res, blocker
-            if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
-                res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
-                if res2 == MoveResult.MOVED:
-                    return res2, blocker2
-                res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
-                return res3, blocker3
-            return res, blocker
-
-        res, blocker = try_move_with_fallback(self.player_sprite, dx, dy)
-        if res is None:
-            return None, None
-        if res == MoveResult.BLOCKED_WALL:
-            return res, blocker
-        if res == MoveResult.BLOCKED_ENTITY:
-            if blocker is not None and hasattr(self.player_sprite, 'attack'):
-                self.player_sprite.attack(blocker)
-            # Завершаем ход игрока
-            self.turn = "enemy"
-            self.process_enemy_turns()
-            return res, blocker
-        if res == MoveResult.MOVED:
+            self._consume_player_light(1)
             self.turn = "waiting_player_anim"
             return res, blocker
         return res, blocker
