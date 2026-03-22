@@ -8,65 +8,64 @@ class MoveResult(Enum):
 
 
 def is_tile_walkable(level, tx: int, ty: int) -> bool:
-    """Возвращает True, если тайл проходим (в пределах уровня).
+    """
+    Возвращает True, если тайл проходим (в пределах уровня).
     Проходимы только FLOOR (1) и STAIRS (3). VOID (0) и WALL (2) — нет.
     """
-    if level is None:
-        return False
-    max_y = len(level)
-    if max_y == 0:
-        return False
-    max_x = len(level[0])
-    if not (0 <= tx < max_x and 0 <= ty < max_y):
-        return False
     try:
-        from sv.world.tiles import WALKABLE
-        return level[ty][tx] in WALKABLE
+        from sv.world.tiles import is_tile_walkable as tile_is_walkable
+
+        return tile_is_walkable(level, tx, ty)
     except Exception:
         return False
 
 
-def get_blocking_entity(scene, tx: int, ty: int, ignore=None):
-    """Ищет и возвращает первую блокирующую сущность на указанном тайле.
-    Ищем по всем спискам спрайтов в scene (если есть атрибут sprite_lists) или через known names.
-    """
+def iter_blocking_entities(scene, ignore=None):
+    """Итерирует по всем блокирующим сущностям на сцене."""
     if scene is None:
-        return None
+        return
 
-    # Если Scene имеет атрибут sprite_lists (dict), используем его
     sprite_lists = getattr(scene, "sprite_lists", None)
     if sprite_lists:
-        for name, sp in sprite_lists.items():
+        for sprites in sprite_lists.values():
             try:
-                for s in sp:
-                    if s is ignore:
+                for sprite in sprites:
+                    if sprite is ignore:
                         continue
-                    if getattr(s, "tile_x", None) == tx and getattr(s, "tile_y", None) == ty:
-                        if getattr(s, "blocking", False):
-                            return s
+                    if getattr(sprite, "blocking", False):
+                        yield sprite
             except Exception:
                 continue
-        return None
+        return
 
-    # Fallback: попробуем некоторые известные списки
     for name in ("Player", "Skeleton"):
         try:
-            sp = scene.get_sprite_list(name)
+            sprites = scene.get_sprite_list(name)
         except Exception:
-            sp = None
-        if not sp:
+            sprites = None
+        if not sprites:
             continue
-        for s in sp:
-            if s is ignore:
+        for sprite in sprites:
+            if sprite is ignore:
                 continue
-            if getattr(s, "tile_x", None) == tx and getattr(s, "tile_y", None) == ty:
-                if getattr(s, "blocking", False):
-                    return s
+            if getattr(sprite, "blocking", False):
+                yield sprite
+
+
+def get_blocking_entity(scene, tx: int, ty: int, ignore=None):
+    """
+    Ищет и возвращает первую блокирующую сущность на указанном тайле.
+    Ищем по всем спискам спрайтов в scene (если есть атрибут sprite_lists) или через known names.
+    """
+    for entity in iter_blocking_entities(scene, ignore=ignore):
+        if getattr(entity, "tile_x", None) == tx and getattr(entity, "tile_y", None) == ty:
+            return entity
     return None
 
 
 def can_move(entity, dx: int, dy: int, level, scene) -> tuple[MoveResult, object | None, int | None, int | None]:
-    """Проверяет возможность перемещения сущности на (dx,dy) в тайлах.
+    """
+    Проверяет возможность перемещения сущности на (dx,dy) в тайлах.
     Важно: НЕ изменяет tile_x/tile_y и НЕ изменяет мировые координаты.
     Возвращает (MoveResult, blocker, target_tx, target_ty).
     """
