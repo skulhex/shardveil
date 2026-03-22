@@ -9,6 +9,7 @@ from arcade.future.light import Light, LightLayer
 from sv.core import Settings
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
+from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
 from sv.ui import ProgressBar
 
@@ -416,38 +417,26 @@ class Game(arcade.Window):
             # Пропуск мёртвых/удалённых сущностей
             if getattr(enemy, "removed", False):
                 continue
-            ex = enemy.tile_x
-            ey = enemy.tile_y
-            px = self.player_sprite.tile_x
-            py = self.player_sprite.tile_y
-            # Если рядом (включая диагональ) — атакуем (Chebyshev distance)
-            if max(abs(ex - px), abs(ey - py)) == 1:
+            action = decide_enemy_action(enemy, self.player_sprite, self.level, self.scene)
+
+            if action.kind == "wait":
+                continue
+
+            if action.kind == "attack":
                 if hasattr(enemy, "attack"):
                     enemy.attack(self.player_sprite)
                 continue
-            # Иначе пытаемся подойти на 1 тайл по оси с приоритетом X
-            # Подходить можно по обеим осям одновременно — так враги смогут двигаться по диагонали
-            dx = 0
-            dy = 0
-            if ex < px:
-                dx = 1
-            elif ex > px:
-                dx = -1
-            if ey < py:
-                dy = 1
-            elif ey > py:
-                dy = -1
 
-            res, blocker = self._move_with_fallback(enemy, dx, dy)
-            # Если блокирует стена — пропускаем
+            if action.kind != "move":
+                continue
+
+            res, blocker = self._move_with_fallback(enemy, action.dx, action.dy)
             if res == MoveResult.BLOCKED_WALL:
                 continue
-            # Если блокирует сущность — если это игрок, атакуем
             if res == MoveResult.BLOCKED_ENTITY:
                 if blocker is self.player_sprite:
                     enemy.attack(self.player_sprite)
                 continue
-            # Если MOVED — нужно дождаться завершения анимации этого врага
             if res == MoveResult.MOVED:
                 self._current_enemy = enemy
 
@@ -461,7 +450,6 @@ class Game(arcade.Window):
                 enemy.on_move_complete = _make_callback(enemy)
                 # ждем завершения анимации — выходим, дальнейшая обработка продолжится в callback
                 return
-            # иначе — продолжаем к следующему врагу
             continue
 
         # Очередь пуста — возвращаем ход игроку

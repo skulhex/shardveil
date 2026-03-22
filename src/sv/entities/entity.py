@@ -185,6 +185,11 @@ class Player(Entity):
 class Enemy(Entity):
     def __init__(self, texture, tile_x: int, tile_y: int, hp: int = 3):
         super().__init__(texture, tile_x, tile_y, hp)
+        self.notice_radius = 8
+        self.search_turn_limit = 3
+        self.is_alerted = False
+        self.last_seen_player_tile: tuple[int, int] | None = None
+        self.search_turns_left = 0
 
     def take_turn(self):
         """Ход врага: немедленно выполняет логику ИИ."""
