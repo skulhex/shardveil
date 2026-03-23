@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import tcod.map
 import tcod.path
-from tcod import libtcodpy
+from tcod.constants import FOV_RESTRICTIVE
 
 from sv.core.collision import iter_blocking_entities
 from sv.world.tiles import build_transparency_mask, build_walkable_mask
@@ -58,7 +58,7 @@ def can_enemy_notice_player(enemy, player, level) -> bool:
         (enemy.tile_y, enemy.tile_x),
         radius=radius,
         light_walls=True,
-        algorithm=libtcodpy.FOV_RESTRICTIVE,
+        algorithm=FOV_RESTRICTIVE,
     )
     return bool(visible[player.tile_y, player.tile_x])
 
