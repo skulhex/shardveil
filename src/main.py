@@ -6,7 +6,7 @@ from pathlib import Path
 import arcade
 from arcade import gl
 from arcade.future.light import Light, LightLayer
-from sv.core import Settings
+from sv.core import CameraController, Settings, snap_world_point
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
@@ -42,7 +42,7 @@ class Game(arcade.Window):
         self.scene = None
         self.player_sprite = None
         self.camera = None
-        self.target_zoom = None
+        self.camera_controller = None
         self.light_layer = None
         self.player_light = None
         self.light_pbar = None
@@ -68,6 +68,8 @@ class Game(arcade.Window):
 
         # Создаём сцену
         self.level = level
+        world_width = len(level[0]) * TILE_SIZE
+        world_height = len(level) * TILE_SIZE
         self.scene = arcade.Scene()
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
@@ -120,10 +122,13 @@ class Game(arcade.Window):
         self.player_sprite = Player(tile_x=spawn_xy[0], tile_y=spawn_xy[1])
         self.scene.add_sprite("Player", self.player_sprite)
         # Настраиваем камеру
-        self.camera = arcade.camera.Camera2D()
-        self.camera.zoom = 2.0  # увеличение всех спрайтов в 2 раза
-        self.target_zoom = 2.0  # начальный целевой зум
-        self.camera.position = (self.player_sprite.center_x, self.player_sprite.center_y)
+        self.camera = arcade.camera.Camera2D(position=self.player_sprite.position, zoom=2.0)
+        self.camera_controller = CameraController(
+            self.camera,
+            world_width=world_width,
+            world_height=world_height,
+            initial_zoom=2.0,
+        )
 
         # Скелет на случайном полу, не на спавне и не на лестнице
         floor_tiles = [
@@ -174,7 +179,9 @@ class Game(arcade.Window):
 
     def on_resize(self, width, height):
         super().on_resize(width, height)
-        if self.camera is not None:
+        if self.camera_controller is not None:
+            self.camera_controller.on_resize(width, height)
+        elif self.camera is not None:
             self.camera.match_window()
         if self.light_layer is not None:
             self.light_layer.resize(width, height)
@@ -194,24 +201,20 @@ class Game(arcade.Window):
         self.light_pbar.value = self._player_light_ratio()
         self.light_pbar.update_bar()
 
-        # Обновляем позицию света игрока и его радиус в зависимости от состояния анимации движения
+        # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
+        if self.scene:
+            self.scene.update(delta_time)
+
+        if self.camera_controller is not None and self.player_sprite is not None:
+            self.camera_controller.update(self.player_sprite.position, delta_time)
+
+        self._snap_moving_sprites()
+
+        # После снапа спрайтов обновляем свет, чтобы он оставался привязанным к рендеру игрока.
         if self.player_light is not None and self.player_sprite is not None:
             self.player_light.position = self.player_sprite.position
             ratio = self._player_light_ratio()
             self.player_light.radius = 160 + 35 * ratio
-        
-        # Плавная интерполяция зума камеры
-        self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
-        # Плавное следование камеры за игроком
-        cam_x, cam_y = self.camera.position
-        self.camera.position = (
-            cam_x + (self.player_sprite.center_x - cam_x) * 0.1,
-            cam_y + (self.player_sprite.center_y - cam_y) * 0.1,
-        )
-
-        # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
-        if self.scene:
-            self.scene.update(delta_time)
 
         # Небольшая очистка старых меток нажатий, чтобы словарь не рос бесконечно
         now = time.time()
@@ -284,6 +287,16 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
+        # Зум камеры, не должен зависеть от порядка ходов.
+        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
+            if self.camera_controller is not None:
+                self.camera_controller.zoom_in()
+            return
+        if symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):
+            if self.camera_controller is not None:
+                self.camera_controller.zoom_out()
+            return
+
         # Игрок может действовать только в свой ход
         if self.turn != "player":
             return
@@ -354,12 +367,6 @@ class Game(arcade.Window):
             self.process_enemy_turns()
             return
 
-        # Зум камеры
-        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
-            self.target_zoom = min(4.0, self.target_zoom * 1.5)
-        elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):
-            self.target_zoom = max(1.0, self.target_zoom / 1.5)
-
     def _move_with_fallback(self, entity, dx, dy):
         """Попытка перемещения с fallback по осям при диагональном столкновении со стеной."""
         res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
@@ -397,6 +404,19 @@ class Game(arcade.Window):
     def on_key_release(self, symbol, modifiers):
         # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
         self._pressed_keys.discard(symbol)
+
+    def _snap_moving_sprites(self):
+        if self.scene is None:
+            return
+
+        zoom = self.camera_controller.zoom if self.camera_controller is not None else self.camera.zoom
+        sprite_lists = getattr(self.scene, "sprite_lists", {})
+        for sprites in sprite_lists.values():
+            for sprite in sprites:
+                if not getattr(sprite, "moving", False):
+                    continue
+                snapped_x, snapped_y = snap_world_point(sprite.center_x, sprite.center_y, zoom)
+                sprite.position = (snapped_x, snapped_y)
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
