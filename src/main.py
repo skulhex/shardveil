@@ -6,7 +6,7 @@ from pathlib import Path
 import arcade
 from arcade import gl
 from arcade.future.light import Light, LightLayer
-from sv.core import CameraController, Settings, snap_world_point
+from sv.core import CameraController, MovementInputState, Settings, snap_world_point
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
@@ -14,8 +14,20 @@ from sv.core.collision import MoveResult
 from sv.ui import ProgressBar
 
 TILE_SIZE = Settings.TILE_SIZE
-# Время в секундах для учета двойных нажатий клавиш направления (для диагоналей)
-DIAGONAL_TOLERANCE = 0.01
+PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
+PLAYER_HORIZONTAL_KEYS = {
+    arcade.key.A: -1,
+    arcade.key.LEFT: -1,
+    arcade.key.D: 1,
+    arcade.key.RIGHT: 1,
+}
+PLAYER_VERTICAL_KEYS = {
+    arcade.key.W: 1,
+    arcade.key.UP: 1,
+    arcade.key.S: -1,
+    arcade.key.DOWN: -1,
+}
+PLAYER_DIRECTION_KEYS = tuple(PLAYER_HORIZONTAL_KEYS) + tuple(PLAYER_VERTICAL_KEYS)
 
 # Путь к папке assets
 asset_dir = Path(sys.argv[0]).resolve().parents[1] / "assets"
@@ -51,15 +63,11 @@ class Game(arcade.Window):
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
         self._current_enemy = None
-        # Набор текущих зажатых клавиш (для поддержки диагоналей)
-        # Будем в этот set класть только ключи-направления
-        self._pressed_keys: set[int] = set()
-        # Временные метки последних нажатий клавиш (symbol -> timestamp)
-        # Не удаляем метки при отпускании, чтобы учесть недавние нажатия в окне tolerance
-        self._key_timestamps: dict[int, float] = {}
-
-        # Буфер ожидаемого хода: {'time': float, 'dx': int, 'dy': int}
-        self._pending_move: dict | None = None
+        self.movement_input = MovementInputState(
+            PLAYER_HORIZONTAL_KEYS,
+            PLAYER_VERTICAL_KEYS,
+            diagonal_window=PLAYER_INPUT_DIAGONAL_WINDOW,
+        )
 
     def setup(self):
         # Генерируем уровень (BSP: 0=void, 1=floor, 2=wall, 3=stairs)
@@ -216,24 +224,7 @@ class Game(arcade.Window):
             ratio = self._player_light_ratio()
             self.player_light.radius = 160 + 35 * ratio
 
-        # Небольшая очистка старых меток нажатий, чтобы словарь не рос бесконечно
         now = time.time()
-        to_del = [k for k, t in self._key_timestamps.items() if now - t > DIAGONAL_TOLERANCE * 3]
-        for k in to_del:
-            self._key_timestamps.pop(k, None)
-
-        # Если ход уже не наш — сбрасываем отложенное движение
-        if self.turn != "player" and self._pending_move is not None:
-            self._pending_move = None
-
-        # Если есть отложенный ход и он просрочен — выполним его
-        if self._pending_move is not None:
-            if now - self._pending_move.get('time', 0.0) >= DIAGONAL_TOLERANCE:
-                pdx = self._pending_move.get('dx', 0)
-                pdy = self._pending_move.get('dy', 0)
-                self._pending_move = None
-                if self.turn == 'player' and (pdx != 0 or pdy != 0):
-                    self._try_player_move(pdx, pdy)
 
         # Если игрок завершил свою анимацию — запускаем очередь врагов
         if self.turn == "waiting_player_anim":
@@ -241,6 +232,9 @@ class Game(arcade.Window):
                 # Переключаемся в обработку врагов
                 self.turn = "enemy"
                 self.process_enemy_turns()
+                return
+
+        self._process_player_movement(now)
 
     def _player_light_ratio(self) -> float:
         if not self.player_sprite:
@@ -297,71 +291,18 @@ class Game(arcade.Window):
                 self.camera_controller.zoom_out()
             return
 
+        now = time.time()
+        if symbol in PLAYER_DIRECTION_KEYS:
+            self.movement_input.press(symbol, now)
+            self._process_player_movement(now)
+            return
+
         # Игрок может действовать только в свой ход
         if self.turn != "player":
             return
 
-        # Перечень клавиш направления
-        dir_keys = (
-            arcade.key.W, arcade.key.S, arcade.key.A, arcade.key.D,
-            arcade.key.UP, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT,
-        )
-
-        now = time.time()
-        # Если это клавиша направления — пометим её как зажатую и запомним метку времени
-        if symbol in dir_keys:
-            # Запомним нажатие
-            self._pressed_keys.add(symbol)
-            self._key_timestamps[symbol] = now
-
-            # Определим, какие горизонтальные и вертикальные клавиши активны прямо сейчас
-            horiz_keys = {arcade.key.A: -1, arcade.key.LEFT: -1, arcade.key.D: 1, arcade.key.RIGHT: 1}
-            vert_keys = {arcade.key.W: 1, arcade.key.UP: 1, arcade.key.S: -1, arcade.key.DOWN: -1}
-
-            # Найдём наиболее свежие активные клавиши по оси
-            best_h_t = -1.0
-            best_v_t = -1.0
-            chosen_h = 0
-            chosen_v = 0
-            for k, s in horiz_keys.items():
-                if k in self._pressed_keys:
-                    chosen_h = s
-                    best_h_t = now
-                    break
-                t = self._key_timestamps.get(k)
-                if t is not None and now - t <= DIAGONAL_TOLERANCE and t > best_h_t:
-                    chosen_h = s
-                    best_h_t = t
-            for k, s in vert_keys.items():
-                if k in self._pressed_keys:
-                    chosen_v = s
-                    best_v_t = now
-                    break
-                t = self._key_timestamps.get(k)
-                if t is not None and now - t <= DIAGONAL_TOLERANCE and t > best_v_t:
-                    chosen_v = s
-                    best_v_t = t
-
-            # Если есть и горизонтальная, и вертикальная активность — сразу делаем диагональ
-            if chosen_h != 0 and chosen_v != 0:
-                self._try_player_move(chosen_h, chosen_v)
-                # очистим pending, если был
-                self._pending_move = None
-                return
-
-            # Иначе — поставим в pending для возможного объединения
-            if chosen_h != 0:
-                self._pending_move = {'time': now, 'dx': chosen_h, 'dy': 0}
-            elif chosen_v != 0:
-                self._pending_move = {'time': now, 'dx': 0, 'dy': chosen_v}
-            else:
-                # просто отложим текущее одиночное нажатие
-                self._pending_move = {'time': now, 'dx': 0, 'dy': 0}
-            return
-
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
-            self._pending_move = None
             self._recover_player_light(2)
             self.turn = "enemy"
             self.process_enemy_turns()
@@ -402,8 +343,20 @@ class Game(arcade.Window):
         return res, blocker
 
     def on_key_release(self, symbol, modifiers):
-        # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
-        self._pressed_keys.discard(symbol)
+        self.movement_input.release(symbol, time.time())
+
+    def _process_player_movement(self, now: float):
+        if self.turn != "player":
+            return
+
+        move = self.movement_input.resolve_move(now)
+        if move is None:
+            return
+
+        dx, dy = move
+        res, _ = self._try_player_move(dx, dy)
+        if res == MoveResult.BLOCKED_WALL:
+            self.movement_input.mark_blocked(dx, dy)
 
     def _snap_moving_sprites(self):
         if self.scene is None:
