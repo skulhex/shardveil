@@ -2,3 +2,4 @@
 from .camera_controller import CameraController, snap_world_point
 from .config import Settings
 from .game_state import GameState
+from .movement_input import MovementInputState
