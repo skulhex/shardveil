@@ -31,12 +31,13 @@ class MovementInputState:
             return
         if symbol in self._pressed_keys:
             return
+        previous_move = self._held_move if self._held_move is not None else self._initial_move
         self._pressed_keys.add(symbol)
         self._press_times[symbol] = now
         self._order_counter += 1
         self._press_order[symbol] = self._order_counter
         self.clear_blocked_on_input_change()
-        self._refresh_resolution(now, event_kind="press")
+        self._refresh_resolution(now, event_kind="press", previous_move=previous_move)
 
     def release(self, symbol: int, now: float) -> None:
         if symbol not in self._directional_keys:
@@ -45,7 +46,7 @@ class MovementInputState:
             return
         self._pressed_keys.remove(symbol)
         self.clear_blocked_on_input_change()
-        self._refresh_resolution(now, event_kind="release")
+        self._refresh_resolution(now, event_kind="release", previous_move=None)
 
     def resolve_move(self, now: float) -> Direction | None:
         move = self._held_move if self._initial_move_consumed else self._initial_move
@@ -65,7 +66,12 @@ class MovementInputState:
     def clear_blocked_on_input_change(self) -> None:
         self._blocked_move = None
 
-    def _refresh_resolution(self, now: float, event_kind: str) -> None:
+    def _refresh_resolution(
+        self,
+        now: float,
+        event_kind: str,
+        previous_move: Direction | None,
+    ) -> None:
         dx, h_time = self._resolve_axis(self.horizontal_bindings)
         dy, v_time = self._resolve_axis(self.vertical_bindings)
 
@@ -78,6 +84,9 @@ class MovementInputState:
 
         if dx != 0 and dy != 0:
             diagonal = (dx, dy)
+            if event_kind == "press" and self._is_cardinal_component(previous_move, diagonal):
+                self._set_resolution(diagonal, diagonal, now)
+                return
             if abs(h_time - v_time) <= self.diagonal_window:
                 self._set_resolution(diagonal, diagonal, now)
                 return
@@ -116,3 +125,14 @@ class MovementInputState:
         if selected_key is None:
             return 0, 0.0
         return bindings[selected_key], self._press_times.get(selected_key, 0.0)
+
+    @staticmethod
+    def _is_cardinal_component(
+        previous_move: Direction | None,
+        diagonal: Direction,
+    ) -> bool:
+        if previous_move is None:
+            return False
+        pdx, pdy = previous_move
+        dx, dy = diagonal
+        return (pdx == dx and pdy == 0) or (pdx == 0 and pdy == dy)

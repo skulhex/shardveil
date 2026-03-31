@@ -44,14 +44,14 @@ class MovementInputStateTests(unittest.TestCase):
 
         self.assertEqual(self.state.resolve_move(1.08), (1, 1))
 
-    def test_late_second_axis_uses_cardinal_then_held_diagonal(self):
+    def test_pressing_second_axis_while_holding_transitions_directly_to_diagonal(self):
         self.state.press(UP, 1.0)
 
         self.assertEqual(self.state.resolve_move(1.12), (0, 1))
 
         self.state.press(RIGHT, 1.5)
 
-        self.assertEqual(self.state.resolve_move(1.5), (1, 0))
+        self.assertEqual(self.state.resolve_move(1.5), (1, 1))
         self.assertEqual(self.state.resolve_move(2.0), (1, 1))
 
     def test_last_pressed_key_wins_on_same_axis_until_release(self):
