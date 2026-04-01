@@ -5,15 +5,29 @@ from collections import deque
 from pathlib import Path
 import arcade
 from arcade import gl
-from sv.core import Settings
+from arcade.future.light import Light, LightLayer
+from sv.core import CameraController, MovementInputState, Settings, snap_world_point
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
+from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
 from sv.ui import ProgressBar
 
 TILE_SIZE = Settings.TILE_SIZE
-# Время в секундах для учета двойных нажатий клавиш направления (для диагоналей)
-DIAGONAL_TOLERANCE = 0.01
+PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
+PLAYER_HORIZONTAL_KEYS = {
+    arcade.key.A: -1,
+    arcade.key.LEFT: -1,
+    arcade.key.D: 1,
+    arcade.key.RIGHT: 1,
+}
+PLAYER_VERTICAL_KEYS = {
+    arcade.key.W: 1,
+    arcade.key.UP: 1,
+    arcade.key.S: -1,
+    arcade.key.DOWN: -1,
+}
+PLAYER_DIRECTION_KEYS = tuple(PLAYER_HORIZONTAL_KEYS) + tuple(PLAYER_VERTICAL_KEYS)
 
 # Путь к папке assets
 asset_dir = Path(sys.argv[0]).resolve().parents[1] / "assets"
@@ -40,21 +54,20 @@ class Game(arcade.Window):
         self.scene = None
         self.player_sprite = None
         self.camera = None
-        self.target_zoom = None
+        self.camera_controller = None
+        self.light_layer = None
+        self.player_light = None
+        self.light_pbar = None
         # Состояние хода: "player" или другие состояния
         self.turn = "player"
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
         self._current_enemy = None
-        # Набор текущих зажатых клавиш (для поддержки диагоналей)
-        # Будем в этот set класть только ключи-направления
-        self._pressed_keys: set[int] = set()
-        # Временные метки последних нажатий клавиш (symbol -> timestamp)
-        # Не удаляем метки при отпускании, чтобы учесть недавние нажатия в окне tolerance
-        self._key_timestamps: dict[int, float] = {}
-
-        # Буфер ожидаемого хода: {'time': float, 'dx': int, 'dy': int}
-        self._pending_move: dict | None = None
+        self.movement_input = MovementInputState(
+            PLAYER_HORIZONTAL_KEYS,
+            PLAYER_VERTICAL_KEYS,
+            diagonal_window=PLAYER_INPUT_DIAGONAL_WINDOW,
+        )
 
     def setup(self):
         # Генерируем уровень (BSP: 0=void, 1=floor, 2=wall, 3=stairs)
@@ -63,6 +76,8 @@ class Game(arcade.Window):
 
         # Создаём сцену
         self.level = level
+        world_width = len(level[0]) * TILE_SIZE
+        world_height = len(level) * TILE_SIZE
         self.scene = arcade.Scene()
         self.scene.add_sprite_list("Ground")
         self.scene.add_sprite_list("Walls")
@@ -115,10 +130,13 @@ class Game(arcade.Window):
         self.player_sprite = Player(tile_x=spawn_xy[0], tile_y=spawn_xy[1])
         self.scene.add_sprite("Player", self.player_sprite)
         # Настраиваем камеру
-        self.camera = arcade.camera.Camera2D()
-        self.camera.zoom = 2.0  # увеличение всех спрайтов в 2 раза
-        self.target_zoom = 2.0  # начальный целевой зум
-        self.camera.position = (self.player_sprite.center_x, self.player_sprite.center_y)
+        self.camera = arcade.camera.Camera2D(position=self.player_sprite.position, zoom=2.0)
+        self.camera_controller = CameraController(
+            self.camera,
+            world_width=world_width,
+            world_height=world_height,
+            initial_zoom=2.0,
+        )
 
         # Скелет на случайном полу, не на спавне и не на лестнице
         floor_tiles = [
@@ -146,54 +164,67 @@ class Game(arcade.Window):
         self.pbar = ProgressBar(color=arcade.color.RED, 
                                 value=1.0, width=200, height=15)
         self.bars_layout.add(self.pbar)
+        self.light_pbar = ProgressBar(color=arcade.color.GOLD, 
+                                       value=1.0, width=200, height=15)
+        self.bars_layout.add(self.light_pbar)
         self.hud_anchor.add(self.bars_layout, anchor_x="left", 
                             anchor_y="bottom", align_y=10, align_x=8)
+
+        # Подключаем базовый световой слой через arcade.gl
+        self.light_layer = LightLayer(self.settings.screen_width, self.settings.screen_height)
+        self.light_layer.set_background_color((0, 0, 0, 255))
+        self.player_light = Light(
+            self.player_sprite.center_x,
+            self.player_sprite.center_y,
+            radius=180,
+            color=(255, 244, 216),
+            mode="soft",
+        )
+        self.light_layer.add(self.player_light)
 
         # Добавляем подложку в UI
         self.ui.add(self.hud_anchor)
 
+    def on_resize(self, width, height):
+        super().on_resize(width, height)
+        if self.camera_controller is not None:
+            self.camera_controller.on_resize(width, height)
+        elif self.camera is not None:
+            self.camera.match_window()
+        if self.light_layer is not None:
+            self.light_layer.resize(width, height)
+
     def on_draw(self):
         self.clear()
-        self.camera.use()
-        self.scene.draw()
+        with self.light_layer:
+            self.camera.use()
+            self.scene.draw()
+        self.light_layer.draw(ambient_color=(28, 24, 34, 255))
         self.ui.draw()
 
     def on_update(self, delta_time):
         # Обновляем значение hp(хп * флоат_значение)
         self.pbar.value = self.player_sprite.hp / self.player_sprite.max_hp
         self.pbar.update_bar()
-        
-        # Плавная интерполяция зума камеры
-        self.camera.zoom += (self.target_zoom - self.camera.zoom) * 0.1
-        # Плавное следование камеры за игроком
-        cam_x, cam_y = self.camera.position
-        self.camera.position = (
-            cam_x + (self.player_sprite.center_x - cam_x) * 0.1,
-            cam_y + (self.player_sprite.center_y - cam_y) * 0.1,
-        )
+        self.light_pbar.value = self._player_light_ratio()
+        self.light_pbar.update_bar()
 
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
         if self.scene:
             self.scene.update(delta_time)
 
-        # Небольшая очистка старых меток нажатий, чтобы словарь не рос бесконечно
+        if self.camera_controller is not None and self.player_sprite is not None:
+            self.camera_controller.update(self.player_sprite.position, delta_time)
+
+        self._snap_moving_sprites()
+
+        # После снапа спрайтов обновляем свет, чтобы он оставался привязанным к рендеру игрока.
+        if self.player_light is not None and self.player_sprite is not None:
+            self.player_light.position = self.player_sprite.position
+            ratio = self._player_light_ratio()
+            self.player_light.radius = 160 + 35 * ratio
+
         now = time.time()
-        to_del = [k for k, t in self._key_timestamps.items() if now - t > DIAGONAL_TOLERANCE * 3]
-        for k in to_del:
-            self._key_timestamps.pop(k, None)
-
-        # Если ход уже не наш — сбрасываем отложенное движение
-        if self.turn != "player" and self._pending_move is not None:
-            self._pending_move = None
-
-        # Если есть отложенный ход и он просрочен — выполним его
-        if self._pending_move is not None:
-            if now - self._pending_move.get('time', 0.0) >= DIAGONAL_TOLERANCE:
-                pdx = self._pending_move.get('dx', 0)
-                pdy = self._pending_move.get('dy', 0)
-                self._pending_move = None
-                if self.turn == 'player' and (pdx != 0 or pdy != 0):
-                    self._try_player_move(pdx, pdy)
 
         # Если игрок завершил свою анимацию — запускаем очередь врагов
         if self.turn == "waiting_player_anim":
@@ -201,6 +232,33 @@ class Game(arcade.Window):
                 # Переключаемся в обработку врагов
                 self.turn = "enemy"
                 self.process_enemy_turns()
+                return
+
+        self._process_player_movement(now)
+
+    def _player_light_ratio(self) -> float:
+        if not self.player_sprite:
+            return 0.0
+        try:
+            return self.player_sprite.light_ratio()
+        except Exception:
+            return 0.0
+
+    def _recover_player_light(self, amount: int) -> int:
+        if not self.player_sprite:
+            return 0
+        try:
+            return self.player_sprite.recover_light(amount)
+        except Exception:
+            return 0
+
+    def _consume_player_light(self, amount: int = 1) -> int:
+        if not self.player_sprite:
+            return 0
+        try:
+            return self.player_sprite.spend_light(amount)
+        except Exception:
+            return 0
 
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
@@ -223,80 +281,32 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
+        # Зум камеры, не должен зависеть от порядка ходов.
+        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
+            if self.camera_controller is not None:
+                self.camera_controller.zoom_in()
+            return
+        if symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):
+            if self.camera_controller is not None:
+                self.camera_controller.zoom_out()
+            return
+
+        now = time.time()
+        if symbol in PLAYER_DIRECTION_KEYS:
+            self.movement_input.press(symbol, now)
+            self._process_player_movement(now)
+            return
+
         # Игрок может действовать только в свой ход
         if self.turn != "player":
             return
 
-        # Перечень клавиш направления
-        dir_keys = (
-            arcade.key.W, arcade.key.S, arcade.key.A, arcade.key.D,
-            arcade.key.UP, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT,
-        )
-
-        now = time.time()
-        # Если это клавиша направления — пометим её как зажатую и запомним метку времени
-        if symbol in dir_keys:
-            # Запомним нажатие
-            self._pressed_keys.add(symbol)
-            self._key_timestamps[symbol] = now
-
-            # Определим, какие горизонтальные и вертикальные клавиши активны прямо сейчас
-            horiz_keys = {arcade.key.A: -1, arcade.key.LEFT: -1, arcade.key.D: 1, arcade.key.RIGHT: 1}
-            vert_keys = {arcade.key.W: 1, arcade.key.UP: 1, arcade.key.S: -1, arcade.key.DOWN: -1}
-
-            # Найдём наиболее свежие активные клавиши по оси
-            best_h_t = -1.0
-            best_v_t = -1.0
-            chosen_h = 0
-            chosen_v = 0
-            for k, s in horiz_keys.items():
-                if k in self._pressed_keys:
-                    chosen_h = s
-                    best_h_t = now
-                    break
-                t = self._key_timestamps.get(k)
-                if t is not None and now - t <= DIAGONAL_TOLERANCE and t > best_h_t:
-                    chosen_h = s
-                    best_h_t = t
-            for k, s in vert_keys.items():
-                if k in self._pressed_keys:
-                    chosen_v = s
-                    best_v_t = now
-                    break
-                t = self._key_timestamps.get(k)
-                if t is not None and now - t <= DIAGONAL_TOLERANCE and t > best_v_t:
-                    chosen_v = s
-                    best_v_t = t
-
-            # Если есть и горизонтальная, и вертикальная активность — сразу делаем диагональ
-            if chosen_h != 0 and chosen_v != 0:
-                self._try_player_move(chosen_h, chosen_v)
-                # очистим pending, если был
-                self._pending_move = None
-                return
-
-            # Иначе — поставим в pending для возможного объединения
-            if chosen_h != 0:
-                self._pending_move = {'time': now, 'dx': chosen_h, 'dy': 0}
-            elif chosen_v != 0:
-                self._pending_move = {'time': now, 'dx': 0, 'dy': chosen_v}
-            else:
-                # просто отложим текущее одиночное нажатие
-                self._pending_move = {'time': now, 'dx': 0, 'dy': 0}
-            return
-
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
-            self._pending_move = None
+            self._recover_player_light(2)
             self.turn = "enemy"
             self.process_enemy_turns()
             return
-
-        # Зум камеры
-        if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
-            self.target_zoom = min(4.0, self.target_zoom * 1.5)
-        elif symbol in (arcade.key.MINUS, arcade.key.UNDERSCORE):
-            self.target_zoom = max(1.0, self.target_zoom / 1.5)
 
     def _move_with_fallback(self, entity, dx, dy):
         """Попытка перемещения с fallback по осям при диагональном столкновении со стеной."""
@@ -321,59 +331,45 @@ class Game(arcade.Window):
         if res == MoveResult.BLOCKED_ENTITY:
             if blocker is not None and hasattr(self.player_sprite, 'attack'):
                 self.player_sprite.attack(blocker)
+                self._consume_player_light(1)
             # Завершаем ход игрока
             self.turn = "enemy"
             self.process_enemy_turns()
             return res, blocker
         if res == MoveResult.MOVED:
-            self.turn = "waiting_player_anim"
-            return res, blocker
-        return res, blocker
-
-        if dx == 0 and dy == 0:
-            return
-
-        # Выполняем попытку перемещения сразу
-        self._try_player_move(dx, dy)
-        return
-
-    def _try_player_move(self, dx, dy):
-        """
-        Попытка перемещения игрока с fallback (использует entity.attempt_move и управляет сменой хода).
-        Возвращает (res, blocker).
-        """
-        def try_move_with_fallback(entity, dx, dy):
-            res, blocker = entity.attempt_move(dx, dy, self.level, self.scene)
-            if res == MoveResult.MOVED:
-                return res, blocker
-            if dx != 0 and dy != 0 and res == MoveResult.BLOCKED_WALL:
-                res2, blocker2 = entity.attempt_move(dx, 0, self.level, self.scene)
-                if res2 == MoveResult.MOVED:
-                    return res2, blocker2
-                res3, blocker3 = entity.attempt_move(0, dy, self.level, self.scene)
-                return res3, blocker3
-            return res, blocker
-
-        res, blocker = try_move_with_fallback(self.player_sprite, dx, dy)
-        if res is None:
-            return None, None
-        if res == MoveResult.BLOCKED_WALL:
-            return res, blocker
-        if res == MoveResult.BLOCKED_ENTITY:
-            if blocker is not None and hasattr(self.player_sprite, 'attack'):
-                self.player_sprite.attack(blocker)
-            # Завершаем ход игрока
-            self.turn = "enemy"
-            self.process_enemy_turns()
-            return res, blocker
-        if res == MoveResult.MOVED:
+            self._consume_player_light(1)
             self.turn = "waiting_player_anim"
             return res, blocker
         return res, blocker
 
     def on_key_release(self, symbol, modifiers):
-        # Убираем клавишу из набора зажатых, но НЕ удаляем метку времени — она нужна для tolerance
-        self._pressed_keys.discard(symbol)
+        self.movement_input.release(symbol, time.time())
+
+    def _process_player_movement(self, now: float):
+        if self.turn != "player":
+            return
+
+        move = self.movement_input.resolve_move(now)
+        if move is None:
+            return
+
+        dx, dy = move
+        res, _ = self._try_player_move(dx, dy)
+        if res == MoveResult.BLOCKED_WALL:
+            self.movement_input.mark_blocked(dx, dy)
+
+    def _snap_moving_sprites(self):
+        if self.scene is None:
+            return
+
+        zoom = self.camera_controller.zoom if self.camera_controller is not None else self.camera.zoom
+        sprite_lists = getattr(self.scene, "sprite_lists", {})
+        for sprites in sprite_lists.values():
+            for sprite in sprites:
+                if not getattr(sprite, "moving", False):
+                    continue
+                snapped_x, snapped_y = snap_world_point(sprite.center_x, sprite.center_y, zoom)
+                sprite.position = (snapped_x, snapped_y)
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
@@ -394,38 +390,26 @@ class Game(arcade.Window):
             # Пропуск мёртвых/удалённых сущностей
             if getattr(enemy, "removed", False):
                 continue
-            ex = enemy.tile_x
-            ey = enemy.tile_y
-            px = self.player_sprite.tile_x
-            py = self.player_sprite.tile_y
-            # Если рядом (включая диагональ) — атакуем (Chebyshev distance)
-            if max(abs(ex - px), abs(ey - py)) == 1:
+            action = decide_enemy_action(enemy, self.player_sprite, self.level, self.scene)
+
+            if action.kind == "wait":
+                continue
+
+            if action.kind == "attack":
                 if hasattr(enemy, "attack"):
                     enemy.attack(self.player_sprite)
                 continue
-            # Иначе пытаемся подойти на 1 тайл по оси с приоритетом X
-            # Подходить можно по обеим осям одновременно — так враги смогут двигаться по диагонали
-            dx = 0
-            dy = 0
-            if ex < px:
-                dx = 1
-            elif ex > px:
-                dx = -1
-            if ey < py:
-                dy = 1
-            elif ey > py:
-                dy = -1
 
-            res, blocker = self._move_with_fallback(enemy, dx, dy)
-            # Если блокирует стена — пропускаем
+            if action.kind != "move":
+                continue
+
+            res, blocker = self._move_with_fallback(enemy, action.dx, action.dy)
             if res == MoveResult.BLOCKED_WALL:
                 continue
-            # Если блокирует сущность — если это игрок, атакуем
             if res == MoveResult.BLOCKED_ENTITY:
                 if blocker is self.player_sprite:
                     enemy.attack(self.player_sprite)
                 continue
-            # Если MOVED — нужно дождаться завершения анимации этого врага
             if res == MoveResult.MOVED:
                 self._current_enemy = enemy
 
@@ -439,7 +423,6 @@ class Game(arcade.Window):
                 enemy.on_move_complete = _make_callback(enemy)
                 # ждем завершения анимации — выходим, дальнейшая обработка продолжится в callback
                 return
-            # иначе — продолжаем к следующему врагу
             continue
 
         # Очередь пуста — возвращаем ход игроку
