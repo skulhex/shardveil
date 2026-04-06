@@ -1,4 +1,6 @@
-class GameState:
-    def __init__(self, settings):
-        self.settings = settings
-        self.running = True
+from .state_manager import AppView, GamePhase, StateManager
+
+
+GameState = StateManager
+
+__all__ = ["AppView", "GamePhase", "GameState", "StateManager"]
