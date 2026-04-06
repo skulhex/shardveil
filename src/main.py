@@ -20,6 +20,8 @@ from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
 from sv.ui import ProgressBar
 
+from sv.ui.message_log import MessageLog
+
 TILE_SIZE = Settings.TILE_SIZE
 PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
 PLAYER_HORIZONTAL_KEYS = {
@@ -56,6 +58,13 @@ class Game(arcade.Window):
         # HUD, etc
         self.ui = arcade.gui.UIManager()
         self.ui.enable()
+
+        self.message_log = MessageLog(
+            x=10,
+            y=70,
+            width=350,
+            max_messages=6
+        )
         
         self.level = None
         self.scene = None
@@ -192,6 +201,8 @@ class Game(arcade.Window):
         self.ui.add(self.hud_anchor)
         self.state.enter_game()
 
+        self.message_log.push("Добро пожаловать в игру", "system")
+
     def on_resize(self, width, height):
         super().on_resize(width, height)
         if self.camera_controller is not None:
@@ -203,11 +214,16 @@ class Game(arcade.Window):
 
     def on_draw(self):
         self.clear()
+
         with self.light_layer:
             self.camera.use()
             self.scene.draw()
+
         self.light_layer.draw(ambient_color=(28, 24, 34, 255))
+        self.default_camera.use()
+
         self.ui.draw()
+        self.message_log.draw()
 
     def on_update(self, delta_time):
         # Обновляем значение hp(хп * флоат_значение)
@@ -319,6 +335,7 @@ class Game(arcade.Window):
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
             self._recover_player_light(2)
+            self.message_log.push("Вы пропустили ход", "info")
             self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
             return
@@ -346,6 +363,7 @@ class Game(arcade.Window):
         if res == MoveResult.BLOCKED_ENTITY:
             if blocker is not None and hasattr(self.player_sprite, 'attack'):
                 self.player_sprite.attack(blocker)
+                self.message_log.push("Вы атаковали врага", "combat")
                 self._consume_player_light(1)
             self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
@@ -416,6 +434,7 @@ class Game(arcade.Window):
 
             if action.kind == "attack":
                 if hasattr(enemy, "attack"):
+                    self.message_log.push("Враг атаковал вас", "combat")
                     enemy.attack(self.player_sprite)
                 continue
 
