@@ -6,7 +6,14 @@ from pathlib import Path
 import arcade
 from arcade import gl
 from arcade.future.light import Light, LightLayer
-from sv.core import CameraController, MovementInputState, Settings, snap_world_point
+from sv.core import (
+    CameraController,
+    GamePhase,
+    MovementInputState,
+    Settings,
+    StateManager,
+    snap_world_point,
+)
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
@@ -58,8 +65,7 @@ class Game(arcade.Window):
         self.light_layer = None
         self.player_light = None
         self.light_pbar = None
-        # Состояние хода: "player" или другие состояния
-        self.turn = "player"
+        self.state = StateManager()
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
         self._current_enemy = None
@@ -184,6 +190,7 @@ class Game(arcade.Window):
 
         # Добавляем подложку в UI
         self.ui.add(self.hud_anchor)
+        self.state.enter_game()
 
     def on_resize(self, width, height):
         super().on_resize(width, height)
@@ -209,6 +216,9 @@ class Game(arcade.Window):
         self.light_pbar.value = self._player_light_ratio()
         self.light_pbar.update_bar()
 
+        if self.state.is_paused():
+            return
+
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
         if self.scene:
             self.scene.update(delta_time)
@@ -227,10 +237,9 @@ class Game(arcade.Window):
         now = time.time()
 
         # Если игрок завершил свою анимацию — запускаем очередь врагов
-        if self.turn == "waiting_player_anim":
+        if self.state.is_player_anim():
             if not getattr(self.player_sprite, "moving", False):
-                # Переключаемся в обработку врагов
-                self.turn = "enemy"
+                self.state.set_phase(GamePhase.ENEMY_TURN)
                 self.process_enemy_turns()
                 return
 
@@ -290,21 +299,27 @@ class Game(arcade.Window):
             if self.camera_controller is not None:
                 self.camera_controller.zoom_out()
             return
+        if symbol == arcade.key.ESCAPE:
+            self.state.toggle_pause()
+            return
 
         now = time.time()
+        if self.state.is_paused():
+            return
+
         if symbol in PLAYER_DIRECTION_KEYS:
             self.movement_input.press(symbol, now)
             self._process_player_movement(now)
             return
 
         # Игрок может действовать только в свой ход
-        if self.turn != "player":
+        if not self.state.is_player_turn():
             return
 
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
             self._recover_player_light(2)
-            self.turn = "enemy"
+            self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
             return
 
@@ -332,13 +347,12 @@ class Game(arcade.Window):
             if blocker is not None and hasattr(self.player_sprite, 'attack'):
                 self.player_sprite.attack(blocker)
                 self._consume_player_light(1)
-            # Завершаем ход игрока
-            self.turn = "enemy"
+            self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
             return res, blocker
         if res == MoveResult.MOVED:
             self._consume_player_light(1)
-            self.turn = "waiting_player_anim"
+            self.state.set_phase(GamePhase.PLAYER_ANIM)
             return res, blocker
         return res, blocker
 
@@ -346,7 +360,7 @@ class Game(arcade.Window):
         self.movement_input.release(symbol, time.time())
 
     def _process_player_movement(self, now: float):
-        if self.turn != "player":
+        if not self.state.is_player_turn():
             return
 
         move = self.movement_input.resolve_move(now)
@@ -373,6 +387,8 @@ class Game(arcade.Window):
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
+        if self.state.is_paused():
+            return
         # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
         self._enemy_queue = deque(e for e in enemies if not getattr(e, 'removed', False))
@@ -385,6 +401,9 @@ class Game(arcade.Window):
         Обрабатывает следующий враг из очереди. Если враг начинает анимацию — ждём её завершения.
         Иначе продолжаем к следующему врагу. По окончании возвращаем ход игроку.
         """
+        if self.state.is_paused():
+            return
+
         while self._enemy_queue:
             enemy = self._enemy_queue.popleft()
             # Пропуск мёртвых/удалённых сущностей
@@ -426,7 +445,7 @@ class Game(arcade.Window):
             continue
 
         # Очередь пуста — возвращаем ход игроку
-        self.turn = "player"
+        self.state.set_phase(GamePhase.PLAYER_TURN)
 
 
 def main():
