@@ -216,6 +216,9 @@ class Game(arcade.Window):
         self.light_pbar.value = self._player_light_ratio()
         self.light_pbar.update_bar()
 
+        if self.state.is_paused():
+            return
+
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
         if self.scene:
             self.scene.update(delta_time)
@@ -296,8 +299,14 @@ class Game(arcade.Window):
             if self.camera_controller is not None:
                 self.camera_controller.zoom_out()
             return
+        if symbol == arcade.key.ESCAPE:
+            self.state.toggle_pause()
+            return
 
         now = time.time()
+        if self.state.is_paused():
+            return
+
         if symbol in PLAYER_DIRECTION_KEYS:
             self.movement_input.press(symbol, now)
             self._process_player_movement(now)
@@ -378,6 +387,8 @@ class Game(arcade.Window):
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
+        if self.state.is_paused():
+            return
         # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
         self._enemy_queue = deque(e for e in enemies if not getattr(e, 'removed', False))
@@ -390,6 +401,9 @@ class Game(arcade.Window):
         Обрабатывает следующий враг из очереди. Если враг начинает анимацию — ждём её завершения.
         Иначе продолжаем к следующему врагу. По окончании возвращаем ход игроку.
         """
+        if self.state.is_paused():
+            return
+
         while self._enemy_queue:
             enemy = self._enemy_queue.popleft()
             # Пропуск мёртвых/удалённых сущностей
