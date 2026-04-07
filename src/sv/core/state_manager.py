@@ -63,13 +63,19 @@ class StateManager:
         if not self.is_in_game():
             return False
         if self.is_paused():
-            if self._phase_before_pause is None:
-                return False
-            self.phase = self._phase_before_pause
-            self._phase_before_pause = None
-            return True
-        if self.phase is None:
+            return self.resume()
+        return self.pause()
+
+    def pause(self) -> bool:
+        if not self.is_in_game() or self.phase is None or self.is_paused():
             return False
         self._phase_before_pause = self.phase
         self.phase = GamePhase.PAUSED
+        return True
+
+    def resume(self) -> bool:
+        if not self.is_paused() or self._phase_before_pause is None:
+            return False
+        self.phase = self._phase_before_pause
+        self._phase_before_pause = None
         return True

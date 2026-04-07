@@ -4,6 +4,7 @@ import time
 from collections import deque
 from pathlib import Path
 import arcade
+from arcade import gui
 from arcade import gl
 from arcade.future.light import Light, LightLayer
 from sv.core import (
@@ -18,7 +19,7 @@ from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
-from sv.ui import ProgressBar
+from sv.ui import GameUI, HUDLayer, OverlayScreenId
 
 TILE_SIZE = Settings.TILE_SIZE
 PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
@@ -53,9 +54,13 @@ class Game(arcade.Window):
             title=self.settings.title
         )
 
-        # HUD, etc
-        self.ui = arcade.gui.UIManager()
-        self.ui.enable()
+        self.ui_manager = gui.UIManager()
+        self.ui = GameUI(
+            self.ui_manager,
+            HUDLayer(),
+            on_resume=self._resume_game,
+            on_main_menu=self._return_to_main_menu,
+        )
         
         self.level = None
         self.scene = None
@@ -64,7 +69,6 @@ class Game(arcade.Window):
         self.camera_controller = None
         self.light_layer = None
         self.player_light = None
-        self.light_pbar = None
         self.state = StateManager()
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
@@ -159,22 +163,6 @@ class Game(arcade.Window):
         else:
             skeleton = Skeleton(tile_x=spawn_xy[0] + 1, tile_y=spawn_xy[1])
         self.scene.add_sprite("Skeleton", skeleton)
-        
-        # Создаем hud bar
-
-        # Инициализируем подложку
-        self.hud_anchor = arcade.gui.UIAnchorLayout()
-        self.bars_layout = arcade.gui.UIBoxLayout(vertical=False, 
-                                                  space_between=20, align="center")
-        # Инициализируем бар и добавляем в подложку
-        self.pbar = ProgressBar(color=arcade.color.RED, 
-                                value=1.0, width=200, height=15)
-        self.bars_layout.add(self.pbar)
-        self.light_pbar = ProgressBar(color=arcade.color.GOLD, 
-                                       value=1.0, width=200, height=15)
-        self.bars_layout.add(self.light_pbar)
-        self.hud_anchor.add(self.bars_layout, anchor_x="left", 
-                            anchor_y="bottom", align_y=10, align_x=8)
 
         # Подключаем базовый световой слой через arcade.gl
         self.light_layer = LightLayer(self.settings.screen_width, self.settings.screen_height)
@@ -188,8 +176,7 @@ class Game(arcade.Window):
         )
         self.light_layer.add(self.player_light)
 
-        # Добавляем подложку в UI
-        self.ui.add(self.hud_anchor)
+        self.ui.setup()
         self.state.enter_game()
 
     def on_resize(self, width, height):
@@ -210,13 +197,12 @@ class Game(arcade.Window):
         self.ui.draw()
 
     def on_update(self, delta_time):
-        # Обновляем значение hp(хп * флоат_значение)
-        self.pbar.value = self.player_sprite.hp / self.player_sprite.max_hp
-        self.pbar.update_bar()
-        self.light_pbar.value = self._player_light_ratio()
-        self.light_pbar.update_bar()
+        self.ui.update_hud(
+            self.player_sprite.hp / self.player_sprite.max_hp,
+            self._player_light_ratio(),
+        )
 
-        if self.state.is_paused():
+        if not self.state.is_in_game() or self.state.is_paused():
             return
 
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
@@ -290,6 +276,16 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
+        if self.ui.handle_key_press(symbol, modifiers):
+            return
+
+        if symbol == arcade.key.ESCAPE:
+            self._pause_game()
+            return
+
+        if not self.state.is_in_game():
+            return
+
         # Зум камеры, не должен зависеть от порядка ходов.
         if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
             if self.camera_controller is not None:
@@ -299,13 +295,8 @@ class Game(arcade.Window):
             if self.camera_controller is not None:
                 self.camera_controller.zoom_out()
             return
-        if symbol == arcade.key.ESCAPE:
-            self.state.toggle_pause()
-            return
 
         now = time.time()
-        if self.state.is_paused():
-            return
 
         if symbol in PLAYER_DIRECTION_KEYS:
             self.movement_input.press(symbol, now)
@@ -357,6 +348,8 @@ class Game(arcade.Window):
         return res, blocker
 
     def on_key_release(self, symbol, modifiers):
+        if not self.state.is_in_game() or self.ui.has_active_overlay():
+            return
         self.movement_input.release(symbol, time.time())
 
     def _process_player_movement(self, now: float):
@@ -446,6 +439,23 @@ class Game(arcade.Window):
 
         # Очередь пуста — возвращаем ход игроку
         self.state.set_phase(GamePhase.PLAYER_TURN)
+
+    def _pause_game(self) -> None:
+        if not self.state.pause():
+            return
+        self.movement_input.clear()
+        self.ui.show_screen(OverlayScreenId.PAUSE)
+
+    def _resume_game(self) -> None:
+        if not self.state.resume():
+            return
+        self.movement_input.clear()
+        self.ui.clear_overlay()
+
+    def _return_to_main_menu(self) -> None:
+        self.state.enter_main_menu()
+        self.movement_input.clear()
+        self.ui.clear_overlay()
 
 
 def main():

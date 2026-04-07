@@ -85,6 +85,34 @@ class StateManagerTests(unittest.TestCase):
 
         self.assertEqual(state.phase, GamePhase.ENEMY_TURN)
 
+    def test_pause_enters_paused_state(self):
+        state = StateManager()
+        state.enter_game(GamePhase.PLAYER_ANIM)
+
+        changed = state.pause()
+
+        self.assertTrue(changed)
+        self.assertTrue(state.is_paused())
+
+    def test_resume_restores_previous_phase(self):
+        state = StateManager()
+        state.enter_game(GamePhase.ENEMY_TURN)
+        state.pause()
+
+        changed = state.resume()
+
+        self.assertTrue(changed)
+        self.assertTrue(state.is_enemy_turn())
+
+    def test_resume_is_no_op_when_not_paused(self):
+        state = StateManager()
+        state.enter_game()
+
+        changed = state.resume()
+
+        self.assertFalse(changed)
+        self.assertTrue(state.is_player_turn())
+
 
 if __name__ == "__main__":
     unittest.main()
