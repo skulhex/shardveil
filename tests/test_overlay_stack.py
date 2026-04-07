@@ -8,12 +8,12 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from sv.ui.overlay import OverlayScreenId, OverlayStack
+from sv.ui.overlay import OverlayScreenId, ScreenStack, ViewScreenId
 
 
-class OverlayStackTests(unittest.TestCase):
+class ScreenStackTests(unittest.TestCase):
     def test_push_sets_current_screen(self):
-        stack = OverlayStack()
+        stack = ScreenStack()
 
         stack.push(OverlayScreenId.PAUSE)
 
@@ -21,7 +21,7 @@ class OverlayStackTests(unittest.TestCase):
         self.assertEqual(stack.depth(), 1)
 
     def test_pop_restores_previous_screen(self):
-        stack = OverlayStack()
+        stack = ScreenStack()
         stack.push(OverlayScreenId.PAUSE)
         stack.push(OverlayScreenId.SETTINGS)
 
@@ -32,7 +32,7 @@ class OverlayStackTests(unittest.TestCase):
         self.assertEqual(stack.depth(), 1)
 
     def test_clear_empties_stack(self):
-        stack = OverlayStack()
+        stack = ScreenStack()
         stack.push(OverlayScreenId.PAUSE)
         stack.push(OverlayScreenId.SETTINGS)
 
@@ -41,6 +41,13 @@ class OverlayStackTests(unittest.TestCase):
         self.assertTrue(stack.is_empty())
         self.assertIsNone(stack.current())
         self.assertEqual(stack.depth(), 0)
+
+    def test_stack_accepts_view_screen_ids(self):
+        stack = ScreenStack()
+
+        stack.push(ViewScreenId.MAIN_MENU)
+
+        self.assertEqual(stack.current(), ViewScreenId.MAIN_MENU)
 
 
 if __name__ == "__main__":

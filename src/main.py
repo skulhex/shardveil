@@ -19,7 +19,7 @@ from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
-from sv.ui import GameUI, HUDLayer, OverlayScreenId
+from sv.ui import GameUI, HUDLayer, OverlayScreenId, ViewScreenId
 
 TILE_SIZE = Settings.TILE_SIZE
 PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
@@ -60,6 +60,8 @@ class Game(arcade.Window):
             HUDLayer(),
             on_resume=self._resume_game,
             on_main_menu=self._return_to_main_menu,
+            on_new_game=self.start_new_game,
+            on_exit_game=self.close,
         )
         
         self.level = None
@@ -80,6 +82,17 @@ class Game(arcade.Window):
         )
 
     def setup(self):
+        self.ui.setup()
+        self.start_new_game()
+
+    def start_new_game(self) -> None:
+        self.ui.clear_view_screen()
+        self.ui.clear_overlay()
+        self.ui.set_hud_visible(True)
+        self.movement_input.clear()
+        self._enemy_queue.clear()
+        self._current_enemy = None
+
         # Генерируем уровень (BSP: 0=void, 1=floor, 2=wall, 3=stairs)
         gen = LevelGenerator(width=64, height=48)
         level, spawn_xy, stairs_xy = gen.generate()
@@ -176,7 +189,6 @@ class Game(arcade.Window):
         )
         self.light_layer.add(self.player_light)
 
-        self.ui.setup()
         self.state.enter_game()
 
     def on_resize(self, width, height):
@@ -190,17 +202,19 @@ class Game(arcade.Window):
 
     def on_draw(self):
         self.clear()
-        with self.light_layer:
-            self.camera.use()
-            self.scene.draw()
-        self.light_layer.draw(ambient_color=(28, 24, 34, 255))
+        if self.state.is_in_game() and self.light_layer is not None and self.camera is not None and self.scene is not None:
+            with self.light_layer:
+                self.camera.use()
+                self.scene.draw()
+            self.light_layer.draw(ambient_color=(28, 24, 34, 255))
         self.ui.draw()
 
     def on_update(self, delta_time):
-        self.ui.update_hud(
-            self.player_sprite.hp / self.player_sprite.max_hp,
-            self._player_light_ratio(),
-        )
+        if self.state.is_in_game() and self.player_sprite is not None:
+            self.ui.update_hud(
+                self.player_sprite.hp / self.player_sprite.max_hp,
+                self._player_light_ratio(),
+            )
 
         if not self.state.is_in_game() or self.state.is_paused():
             return
@@ -257,6 +271,8 @@ class Game(arcade.Window):
 
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
+        if self.scene is None:
+            return None
         # Если указано имя списка - ищем только в нём
         if list_name:
             sprites = self.scene.get_sprite_list(list_name)
@@ -380,7 +396,7 @@ class Game(arcade.Window):
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
-        if self.state.is_paused():
+        if self.state.is_paused() or self.scene is None:
             return
         # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
@@ -456,6 +472,8 @@ class Game(arcade.Window):
         self.state.enter_main_menu()
         self.movement_input.clear()
         self.ui.clear_overlay()
+        self.ui.set_hud_visible(False)
+        self.ui.show_view_screen(ViewScreenId.MAIN_MENU)
 
 
 def main():
