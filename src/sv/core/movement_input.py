@@ -66,6 +66,17 @@ class MovementInputState:
     def clear_blocked_on_input_change(self) -> None:
         self._blocked_move = None
 
+    def clear(self) -> None:
+        self._pressed_keys.clear()
+        self._press_times.clear()
+        self._press_order.clear()
+        self._order_counter = 0
+        self._initial_move = None
+        self._held_move = None
+        self._ready_at = 0.0
+        self._initial_move_consumed = True
+        self._blocked_move = None
+
     def _refresh_resolution(
         self,
         now: float,
