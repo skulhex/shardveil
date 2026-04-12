@@ -4,14 +4,22 @@ import time
 from collections import deque
 from pathlib import Path
 import arcade
+from arcade import gui
 from arcade import gl
 from arcade.future.light import Light, LightLayer
-from sv.core import CameraController, MovementInputState, Settings, snap_world_point
+from sv.core import (
+    CameraController,
+    GamePhase,
+    MovementInputState,
+    Settings,
+    StateManager,
+    snap_world_point,
+)
 from sv.world import LevelGenerator
 from sv.entities import Player, Skeleton
 from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
-from sv.ui import ProgressBar
+from sv.ui import GameUI, HUDLayer, OverlayScreenId, ViewScreenId
 
 TILE_SIZE = Settings.TILE_SIZE
 PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
@@ -46,9 +54,15 @@ class Game(arcade.Window):
             title=self.settings.title
         )
 
-        # HUD, etc
-        self.ui = arcade.gui.UIManager()
-        self.ui.enable()
+        self.ui_manager = gui.UIManager()
+        self.ui = GameUI(
+            self.ui_manager,
+            HUDLayer(),
+            on_resume=self._resume_game,
+            on_main_menu=self._return_to_main_menu,
+            on_new_game=self.start_new_game,
+            on_exit_game=self.close,
+        )
         
         self.level = None
         self.scene = None
@@ -57,9 +71,7 @@ class Game(arcade.Window):
         self.camera_controller = None
         self.light_layer = None
         self.player_light = None
-        self.light_pbar = None
-        # Состояние хода: "player" или другие состояния
-        self.turn = "player"
+        self.state = StateManager()
         # Очередь врагов для последовательной обработки
         self._enemy_queue: deque = deque()
         self._current_enemy = None
@@ -70,6 +82,17 @@ class Game(arcade.Window):
         )
 
     def setup(self):
+        self.ui.setup()
+        self.start_new_game()
+
+    def start_new_game(self) -> None:
+        self.ui.clear_view_screen()
+        self.ui.clear_overlay()
+        self.ui.set_hud_visible(True)
+        self.movement_input.clear()
+        self._enemy_queue.clear()
+        self._current_enemy = None
+
         # Генерируем уровень (BSP: 0=void, 1=floor, 2=wall, 3=stairs)
         gen = LevelGenerator(width=64, height=48)
         level, spawn_xy, stairs_xy = gen.generate()
@@ -153,22 +176,6 @@ class Game(arcade.Window):
         else:
             skeleton = Skeleton(tile_x=spawn_xy[0] + 1, tile_y=spawn_xy[1])
         self.scene.add_sprite("Skeleton", skeleton)
-        
-        # Создаем hud bar
-
-        # Инициализируем подложку
-        self.hud_anchor = arcade.gui.UIAnchorLayout()
-        self.bars_layout = arcade.gui.UIBoxLayout(vertical=False, 
-                                                  space_between=20, align="center")
-        # Инициализируем бар и добавляем в подложку
-        self.pbar = ProgressBar(color=arcade.color.RED, 
-                                value=1.0, width=200, height=15)
-        self.bars_layout.add(self.pbar)
-        self.light_pbar = ProgressBar(color=arcade.color.GOLD, 
-                                       value=1.0, width=200, height=15)
-        self.bars_layout.add(self.light_pbar)
-        self.hud_anchor.add(self.bars_layout, anchor_x="left", 
-                            anchor_y="bottom", align_y=10, align_x=8)
 
         # Подключаем базовый световой слой через arcade.gl
         self.light_layer = LightLayer(self.settings.screen_width, self.settings.screen_height)
@@ -182,8 +189,7 @@ class Game(arcade.Window):
         )
         self.light_layer.add(self.player_light)
 
-        # Добавляем подложку в UI
-        self.ui.add(self.hud_anchor)
+        self.state.enter_game()
 
     def on_resize(self, width, height):
         super().on_resize(width, height)
@@ -196,18 +202,22 @@ class Game(arcade.Window):
 
     def on_draw(self):
         self.clear()
-        with self.light_layer:
-            self.camera.use()
-            self.scene.draw()
-        self.light_layer.draw(ambient_color=(28, 24, 34, 255))
+        if self.state.is_in_game() and self.light_layer is not None and self.camera is not None and self.scene is not None:
+            with self.light_layer:
+                self.camera.use()
+                self.scene.draw()
+            self.light_layer.draw(ambient_color=(28, 24, 34, 255))
         self.ui.draw()
 
     def on_update(self, delta_time):
-        # Обновляем значение hp(хп * флоат_значение)
-        self.pbar.value = self.player_sprite.hp / self.player_sprite.max_hp
-        self.pbar.update_bar()
-        self.light_pbar.value = self._player_light_ratio()
-        self.light_pbar.update_bar()
+        if self.state.is_in_game() and self.player_sprite is not None:
+            self.ui.update_hud(
+                self.player_sprite.hp / self.player_sprite.max_hp,
+                self._player_light_ratio(),
+            )
+
+        if not self.state.is_in_game() or self.state.is_paused():
+            return
 
         # Обновляем сцену, чтобы вызвать Sprite.update на всех спрайтах (анимация движения)
         if self.scene:
@@ -227,10 +237,9 @@ class Game(arcade.Window):
         now = time.time()
 
         # Если игрок завершил свою анимацию — запускаем очередь врагов
-        if self.turn == "waiting_player_anim":
+        if self.state.is_player_anim():
             if not getattr(self.player_sprite, "moving", False):
-                # Переключаемся в обработку врагов
-                self.turn = "enemy"
+                self.state.set_phase(GamePhase.ENEMY_TURN)
                 self.process_enemy_turns()
                 return
 
@@ -262,6 +271,8 @@ class Game(arcade.Window):
 
     def get_entity_at(self, tile_x: int, tile_y: int, list_name: str | None = None):
         """Возвращает сущность в списке по координатам тайла, либо None."""
+        if self.scene is None:
+            return None
         # Если указано имя списка - ищем только в нём
         if list_name:
             sprites = self.scene.get_sprite_list(list_name)
@@ -281,6 +292,16 @@ class Game(arcade.Window):
         return None
 
     def on_key_press(self, symbol, modifiers):
+        if self.ui.handle_key_press(symbol, modifiers):
+            return
+
+        if symbol == arcade.key.ESCAPE:
+            self._pause_game()
+            return
+
+        if not self.state.is_in_game():
+            return
+
         # Зум камеры, не должен зависеть от порядка ходов.
         if symbol in (arcade.key.PLUS, arcade.key.EQUAL):
             if self.camera_controller is not None:
@@ -292,19 +313,20 @@ class Game(arcade.Window):
             return
 
         now = time.time()
+
         if symbol in PLAYER_DIRECTION_KEYS:
             self.movement_input.press(symbol, now)
             self._process_player_movement(now)
             return
 
         # Игрок может действовать только в свой ход
-        if self.turn != "player":
+        if not self.state.is_player_turn():
             return
 
         # Пропуск хода по пробелу
         if symbol == arcade.key.SPACE:
             self._recover_player_light(2)
-            self.turn = "enemy"
+            self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
             return
 
@@ -332,21 +354,22 @@ class Game(arcade.Window):
             if blocker is not None and hasattr(self.player_sprite, 'attack'):
                 self.player_sprite.attack(blocker)
                 self._consume_player_light(1)
-            # Завершаем ход игрока
-            self.turn = "enemy"
+            self.state.set_phase(GamePhase.ENEMY_TURN)
             self.process_enemy_turns()
             return res, blocker
         if res == MoveResult.MOVED:
             self._consume_player_light(1)
-            self.turn = "waiting_player_anim"
+            self.state.set_phase(GamePhase.PLAYER_ANIM)
             return res, blocker
         return res, blocker
 
     def on_key_release(self, symbol, modifiers):
+        if not self.state.is_in_game() or self.ui.has_active_overlay():
+            return
         self.movement_input.release(symbol, time.time())
 
     def _process_player_movement(self, now: float):
-        if self.turn != "player":
+        if not self.state.is_player_turn():
             return
 
         move = self.movement_input.resolve_move(now)
@@ -373,6 +396,8 @@ class Game(arcade.Window):
 
     def process_enemy_turns(self):
         """Запускает последовательную обработку ходов всех врагов с ожиданием их анимаций."""
+        if self.state.is_paused() or self.scene is None:
+            return
         # Сформируем очередь живых врагов
         enemies = list(self.scene.get_sprite_list("Skeleton") or [])
         self._enemy_queue = deque(e for e in enemies if not getattr(e, 'removed', False))
@@ -385,6 +410,9 @@ class Game(arcade.Window):
         Обрабатывает следующий враг из очереди. Если враг начинает анимацию — ждём её завершения.
         Иначе продолжаем к следующему врагу. По окончании возвращаем ход игроку.
         """
+        if self.state.is_paused():
+            return
+
         while self._enemy_queue:
             enemy = self._enemy_queue.popleft()
             # Пропуск мёртвых/удалённых сущностей
@@ -426,7 +454,26 @@ class Game(arcade.Window):
             continue
 
         # Очередь пуста — возвращаем ход игроку
-        self.turn = "player"
+        self.state.set_phase(GamePhase.PLAYER_TURN)
+
+    def _pause_game(self) -> None:
+        if not self.state.pause():
+            return
+        self.movement_input.clear()
+        self.ui.show_screen(OverlayScreenId.PAUSE)
+
+    def _resume_game(self) -> None:
+        if not self.state.resume():
+            return
+        self.movement_input.clear()
+        self.ui.clear_overlay()
+
+    def _return_to_main_menu(self) -> None:
+        self.state.enter_main_menu()
+        self.movement_input.clear()
+        self.ui.clear_overlay()
+        self.ui.set_hud_visible(False)
+        self.ui.show_view_screen(ViewScreenId.MAIN_MENU)
 
 
 def main():
