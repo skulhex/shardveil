@@ -299,6 +299,10 @@ class Game(arcade.Window):
             self._pause_game()
             return
 
+        if symbol == arcade.key.I:
+            self._toggle_inventory()
+            return
+
         if not self.state.is_in_game():
             return
 
@@ -461,6 +465,20 @@ class Game(arcade.Window):
             return
         self.movement_input.clear()
         self.ui.show_screen(OverlayScreenId.PAUSE)
+
+    def _toggle_inventory(self) -> None:
+        if not self.state.is_in_game() or self.player_sprite is None:
+            return
+        if self.ui.has_active_overlay():
+            return
+        if not self.state.pause():
+            return
+        inventory = getattr(self.player_sprite, "inventory", None)
+        if inventory is None:
+            self.state.resume()
+            return
+        self.movement_input.clear()
+        self.ui.show_inventory(inventory)
 
     def _resume_game(self) -> None:
         if not self.state.resume():
