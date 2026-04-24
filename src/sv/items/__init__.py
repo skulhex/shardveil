@@ -1,8 +1,7 @@
-"""Item and inventory domain objects."""
+"""Item and inventory package."""
+
 from .item import (
     DEFAULT_ITEM_DEFINITIONS,
-    ITEM_SPRITESHEET_PATH,
-    ITEM_TEXTURE_SIZE,
     EquipmentSlot,
     ItemDefinition,
     ItemKind,
@@ -18,3 +17,19 @@ from .inventory import (
     STORAGE_ROWS,
     create_default_inventory,
 )
+
+__all__ = [
+    "DEFAULT_ITEM_DEFINITIONS",
+    "EquipmentSlot",
+    "EQUIPMENT_SLOT_ORDER",
+    "INVENTORY_COLUMNS",
+    "INVENTORY_ROWS",
+    "Inventory",
+    "ItemDefinition",
+    "ItemKind",
+    "ItemStack",
+    "STORAGE_COLUMNS",
+    "STORAGE_ROWS",
+    "create_default_inventory",
+    "load_item_textures",
+]

@@ -7,8 +7,7 @@ from arcade import gui
 from arcade.gui import events
 from arcade.gui.widgets import EVENT_HANDLED, EVENT_UNHANDLED
 
-from sv.items import EQUIPMENT_SLOT_ORDER, EquipmentSlot, Inventory, ItemStack, load_item_textures
-from sv.items.inventory import STORAGE_COLUMNS, STORAGE_ROWS
+from sv.items import EQUIPMENT_SLOT_ORDER, EquipmentSlot, Inventory, ItemStack, STORAGE_COLUMNS, STORAGE_ROWS, load_item_textures
 
 
 GRID_COLUMNS = 1 + STORAGE_COLUMNS
@@ -16,8 +15,8 @@ GRID_ROWS = STORAGE_ROWS
 CELL_SIZE = 60
 CELL_GAP = 8
 PANEL_PADDING = 18
-HEADER_HEIGHT = 28
-FOOTER_HEIGHT = 24
+HEADER_HEIGHT = 36
+FOOTER_HEIGHT = 20
 EQUIPMENT_LABELS = {
     EquipmentSlot.WEAPON: "Оружие",
     EquipmentSlot.ARMOR: "Броня",
@@ -105,20 +104,22 @@ class InventoryPanel(gui.UIWidget):
     def do_render(self, surface: gui.Surface) -> None:
         self.prepare_render(surface)
 
-        arcade.draw_text(
+        self._draw_text(
             "Инвентарь",
             PANEL_PADDING,
-            self.height - PANEL_PADDING - 6,
+            self.height - PANEL_PADDING,
             color=(235, 238, 245, 255),
             font_size=16,
             bold=True,
+            anchor_y="top",
         )
-        arcade.draw_text(
+        self._draw_text(
             "I или Esc - закрыть",
             PANEL_PADDING,
-            PANEL_PADDING - 2,
+            PANEL_PADDING // 2,
             color=(164, 170, 184, 255),
             font_size=11,
+            anchor_y="bottom",
         )
 
         for row in range(GRID_ROWS):
@@ -164,7 +165,7 @@ class InventoryPanel(gui.UIWidget):
         arcade.draw_texture_rect(texture, icon_rect, pixelated=True)
 
         if stack.quantity > 1:
-            arcade.draw_text(
+            self._draw_text(
                 str(stack.quantity),
                 rect.left + rect.width - 18,
                 rect.bottom + 4,
@@ -176,7 +177,7 @@ class InventoryPanel(gui.UIWidget):
             )
 
     def _draw_slot_label(self, label: str, rect: arcade.types.Rect) -> None:
-        arcade.draw_text(
+        self._draw_text(
             label,
             rect.left + rect.width / 2,
             rect.bottom + rect.height / 2,
@@ -188,6 +189,9 @@ class InventoryPanel(gui.UIWidget):
             width=int(rect.width - 10),
             multiline=True,
         )
+
+    def _draw_text(self, text: str, x: float, y: float, **kwargs) -> None:
+        arcade.Text(text, x, y, **kwargs).draw()
 
     def _cell_rect(self, column: int, row: int) -> arcade.types.Rect:
         left = PANEL_PADDING + column * (CELL_SIZE + CELL_GAP)

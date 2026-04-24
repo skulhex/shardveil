@@ -55,18 +55,18 @@ class ItemStack:
         return self.definition.name
 
 
-ITEM_TEXTURE_SIZE = 16
-ITEM_SPRITESHEET_PATH = ":assets:/sprites/items.png"
+_ITEM_TEXTURE_SIZE = 16
+_ITEM_SPRITESHEET_PATH = ":assets:/sprites/items.png"
 
 
 @lru_cache(maxsize=1)
 def load_item_textures() -> tuple[arcade.Texture, ...]:
     try:
-        sheet = arcade.load_spritesheet(ITEM_SPRITESHEET_PATH)
+        sheet = arcade.load_spritesheet(_ITEM_SPRITESHEET_PATH)
     except FileNotFoundError:
         fallback_path = Path(__file__).resolve().parents[3] / "assets" / "sprites" / "items.png"
         sheet = arcade.load_spritesheet(fallback_path)
-    textures = sheet.get_texture_grid((ITEM_TEXTURE_SIZE, ITEM_TEXTURE_SIZE), columns=4, count=4)
+    textures = sheet.get_texture_grid((_ITEM_TEXTURE_SIZE, _ITEM_TEXTURE_SIZE), columns=4, count=4)
     return tuple(textures)
 
 
