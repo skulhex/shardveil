@@ -22,6 +22,15 @@ class EquipmentSlot(Enum):
     ACCESSORY = auto()
     EXTRA = auto()
 
+    @property
+    def label(self) -> str:
+        return {
+            EquipmentSlot.WEAPON: "Оружие",
+            EquipmentSlot.ARMOR: "Броня",
+            EquipmentSlot.ACCESSORY: "Аксессуар",
+            EquipmentSlot.EXTRA: "Слот",
+        }[self]
+
 
 @dataclass(frozen=True, slots=True)
 class ItemDefinition:
@@ -29,8 +38,19 @@ class ItemDefinition:
     name: str
     kind: ItemKind
     icon_index: int
+    description: str
     max_stack: int = 1
     equip_slot: EquipmentSlot | None = None
+
+    @property
+    def kind_label(self) -> str:
+        return {
+            ItemKind.WEAPON: "Оружие",
+            ItemKind.ARMOR: "Броня",
+            ItemKind.ACCESSORY: "Аксессуар",
+            ItemKind.CONSUMABLE: "Расходник",
+            ItemKind.MISC: "Предмет",
+        }[self.kind]
 
     @property
     def stackable(self) -> bool:
@@ -76,6 +96,7 @@ DEFAULT_ITEM_DEFINITIONS: dict[str, ItemDefinition] = {
         name="Меч",
         kind=ItemKind.WEAPON,
         icon_index=0,
+        description="Стандартный клинок для ближнего боя.",
         equip_slot=EquipmentSlot.WEAPON,
     ),
     "armor": ItemDefinition(
@@ -83,6 +104,7 @@ DEFAULT_ITEM_DEFINITIONS: dict[str, ItemDefinition] = {
         name="Кольчуга",
         kind=ItemKind.ARMOR,
         icon_index=1,
+        description="Лёгкая защита, рассчитанная на раннюю игру.",
         equip_slot=EquipmentSlot.ARMOR,
     ),
     "ring": ItemDefinition(
@@ -90,6 +112,7 @@ DEFAULT_ITEM_DEFINITIONS: dict[str, ItemDefinition] = {
         name="Кольцо",
         kind=ItemKind.ACCESSORY,
         icon_index=2,
+        description="Простой аксессуар. Заглушка для будущих эффектов.",
         equip_slot=EquipmentSlot.ACCESSORY,
     ),
     "potion": ItemDefinition(
@@ -97,6 +120,7 @@ DEFAULT_ITEM_DEFINITIONS: dict[str, ItemDefinition] = {
         name="Зелье",
         kind=ItemKind.CONSUMABLE,
         icon_index=3,
+        description="Заглушка расходника. Пока ничего не делает.",
         max_stack=5,
     ),
 }

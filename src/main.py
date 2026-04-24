@@ -294,6 +294,8 @@ class Game(arcade.Window):
     def on_key_press(self, symbol, modifiers):
         if self.ui.handle_key_press(symbol, modifiers):
             return
+        if self.ui.has_active_overlay():
+            return
 
         if symbol == arcade.key.ESCAPE:
             self._pause_game()
