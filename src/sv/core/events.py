@@ -1,8 +1,8 @@
 from __future__ import annotations
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from collections import deque
-from typing import Any, Dict, Deque, Iterable, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 
 class EventType(Enum):

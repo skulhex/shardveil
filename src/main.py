@@ -20,9 +20,9 @@ from sv.ai import decide_enemy_action
 from sv.core.collision import MoveResult
 from sv.ui import ProgressBar
 
-from sv.core.events import EventBus, GameEvent, EventType
+from sv.ui import MessageLog, ProgressBar
 
-from sv.core.message_log import MessageLog
+from sv.core.events import EventBus, GameEvent, EventType
 
 TILE_SIZE = Settings.TILE_SIZE
 PLAYER_INPUT_DIAGONAL_WINDOW = 0.02
