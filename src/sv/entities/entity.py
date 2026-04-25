@@ -1,5 +1,6 @@
 import arcade
 from sv.core import Settings
+from sv.items import create_default_inventory
 
 TILE_SIZE = Settings.TILE_SIZE
 
@@ -144,6 +145,7 @@ class Player(Entity):
         super().__init__(texture, tile_x, tile_y, hp=10, blocking=True)
         self.light_max = 10
         self.light = 10
+        self.inventory = create_default_inventory()
 
     def spend_light(self, amount: int = 1) -> int:
         """Тратит свет и возвращает фактически потраченное количество."""
