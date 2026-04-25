@@ -38,6 +38,7 @@ def panel_size() -> tuple[float, float]:
 
 @dataclass(slots=True)
 class InventoryFocus:
+    """Класс для отслеживания текущей сфокусированной ячейки в инвентаре."""
     column: int = 0
     row: int = 0
 
@@ -50,6 +51,7 @@ class InventoryFocus:
 
 
 class InventoryPanel(gui.UIWidget):
+    """Панель инвентаря, отображающая экипировку и хранилище персонажа, а также детали выбранного предмета."""
     def __init__(self, inventory: Inventory):
         width, height = panel_size()
         super().__init__(width=width, height=height)
@@ -113,6 +115,7 @@ class InventoryPanel(gui.UIWidget):
         return super().on_event(event)
 
     def do_render(self, surface: gui.Surface) -> None:
+        """Отрисовка панели инвентаря, включая сетку ячеек, экипировку, хранилище и панель деталей."""
         self.prepare_render(surface)
 
         menu_rect = arcade.LBWH(0, 0, self.width, self.height)
@@ -126,7 +129,7 @@ class InventoryPanel(gui.UIWidget):
         self._draw_panel_title("Детали", info_rect.left, title_y)
 
         self._draw_text(
-            "I или Esc - закрыть",
+            "I или Esc - закрыть, Space или Enter - взять/положить",
             PANEL_PADDING,
             PANEL_PADDING // 2,
             color=(164, 170, 184, 255),
@@ -371,6 +374,7 @@ class InventoryPanel(gui.UIWidget):
 
 
 class InventoryScreen:
+    """Экран инвентаря, отображающий панель инвентаря и обрабатывающий её события."""
     def __init__(self, inventory: Inventory, on_close):
         self.inventory = inventory
         self.on_close = on_close

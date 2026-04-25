@@ -35,6 +35,10 @@ def _empty_equipment() -> dict[EquipmentSlot, ItemStack | None]:
 
 @dataclass(slots=True)
 class Inventory:
+    """
+    Класс, представляющий инвентарь игрока, включая экипировку и хранилище предметов.
+    Предоставляет методы для управления предметами, их перемещения между ячейками и проверки допустимости размещения.
+    """
     equipment: dict[EquipmentSlot, ItemStack | None] = field(default_factory=_empty_equipment)
     storage: list[ItemStack | None] = field(default_factory=_empty_storage)
 
